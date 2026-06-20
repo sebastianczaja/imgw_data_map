@@ -63,10 +63,8 @@ stations_map = {
     for _, row in stations_df.iterrows()
 }
 
-start_utc = datetime(year=year, month=month, day=day, hour=18, minute=0, second=0, microsecond=0, tzinfo=timezone.utc) - timedelta(days=1)
-now = datetime.now(timezone.utc)
-end_utc = start_utc + timedelta(days=1)
-hours_interval = math.ceil((now - start_utc).total_seconds() / 3600)
+# Bezpieczny stały interwał (36 godzin) pozwalający pobrać pełny profil dobowy o każdej porze
+hours_interval = 36
 
 async def fetch_przymrozki_json(url):
     try:
@@ -109,22 +107,22 @@ def extract_precip_data(temperature_data):
     all_precips = None
     if temperature_data and isinstance(temperature_data.get("precip"), list) and len(temperature_data.get("precip")) > 0:
         valid_precips = []
+        today_local = datetime.now(local_tz).date()
+
         for t in temperature_data.get("precip", []):
             if t["value"] is None or t["date"] is None:
                 continue
             try:
-                dt = parser.isoparse(t["date"])
+                dt_utc = parser.isoparse(t["date"])
+                dt_local = dt_utc.astimezone(local_tz)
+                if dt_local.date() == today_local:
+                    valid_precips.append(t)
             except Exception:
                 continue
-            start_percip = start_utc + timedelta(hours=1) 
-            if start_percip <= dt <= end_utc:
-                valid_precips.append(t)
         if valid_precips:
             all_precips = valid_precips
-            if len(valid_precips) > 0:
-                precip_sum = 0
-                for t in valid_precips:
-                    precip_sum += t["value"]
+            precip_sum = sum(t["value"] for t in valid_precips)
+            
     return ExtractedPrecip(
         precip_sum=precip_sum,
         all_precips=all_precips,
@@ -146,15 +144,18 @@ def extract_temperature_data(temperature_data, przymrozki_data, station_name, lo
 
     if temperature_data and isinstance(temperature_data.get("temperature"), list) and len(temperature_data.get("temperature")) > 0:
         valid_temps = []
+        today_local = datetime.now(local_tz).date()
+
         for t in temperature_data.get("temperature", []):
             if t.get("value") is None or t.get("date") is None:
                 continue
             try:
-                dt = parser.isoparse(t["date"])
+                dt_utc = parser.isoparse(t["date"])
+                dt_local = dt_utc.astimezone(local_tz)
+                if dt_local.date() == today_local:
+                    valid_temps.append(t)
             except Exception:
                 continue
-            if start_utc <= dt <= end_utc:
-                valid_temps.append(t)
         if valid_temps:
             min_temp_entry = min(valid_temps, key=lambda t: t["value"])
             max_temp_entry = max(valid_temps, key=lambda t: t["value"])
@@ -164,7 +165,7 @@ def extract_temperature_data(temperature_data, przymrozki_data, station_name, lo
             temp_max_h_time = max_temp_entry["date"]
             all_temps = valid_temps
 
-        if przymrozki_data and przymrozki_data[station_name]:
+        if przymrozki_data and przymrozki_data.get(station_name):
             przymrozki_list = przymrozki_data[station_name]
             if przymrozki_list:
                 przymrozek = find_przymrozek(przymrozki_list, lon, lat)
@@ -172,13 +173,11 @@ def extract_temperature_data(temperature_data, przymrozki_data, station_name, lo
                     if przymrozek.get("temp_min_2m") is not None: temp_min = float(przymrozek["temp_min_2m"])
                     if przymrozek.get("temp_max_2m") is not None: temp_max = float(przymrozek["temp_max_2m"])
 
+        # Pobieranie temperatury aktualnej: usunięto zbyt restrykcyjne filtry czasu, bierzemy najnowszą z bazy
         try:
             t = temperature_data["temperature"][-1]
-            dt = parser.isoparse(t["date"])
-            hour_ago = now.replace(minute=0, second=0, microsecond=0)
-            if hour_ago <= dt:
-                temp_current = t.get("value")
-                temp_current_time = t.get("date")
+            temp_current = t.get("value")
+            temp_current_time = t.get("date")
         except Exception:
             pass
 
@@ -229,6 +228,31 @@ async def process_station(session, data, przymrozki_data):
 
     coords = station_info["coordinates"]
 
+    # Budowanie pełnej historii godzinowej dla dzisiejszego dnia (lokalny czas w Polsce)
+    hourly_data = {f"{h:02d}": {} for h in range(24)}
+    
+    if temperature_data and isinstance(temperature_data.get("temperature"), list):
+        for t in temperature_data["temperature"]:
+            if t.get("value") is not None and t.get("date") is not None:
+                try:
+                    dt_utc = parser.isoparse(t["date"])
+                    dt_local = dt_utc.astimezone(local_tz)
+                    if dt_local.year == year and dt_local.month == month and dt_local.day == day:
+                        hourly_data[f"{dt_local.hour:02d}"]["Ta"] = t["value"]
+                except Exception:
+                    continue
+
+    if temperature_data and isinstance(temperature_data.get("precip"), list):
+        for p in temperature_data["precip"]:
+            if p.get("value") is not None and p.get("date") is not None:
+                try:
+                    dt_utc = parser.isoparse(p["date"])
+                    dt_local = dt_utc.astimezone(local_tz)
+                    if dt_local.year == year and dt_local.month == month and dt_local.day == day:
+                        hourly_data[f"{dt_local.hour:02d}"]["Precip"] = p["value"]
+                except Exception:
+                    continue
+
     raw_properties = {
         "Station_id": station_id,
         "Station_name": station_info["Station_name"],
@@ -260,7 +284,8 @@ async def process_station(session, data, przymrozki_data):
         "Precip_10min": float(data['opad_10min']) if data['opad_10min'] else None,
         "Precip_10min_time": data['opad_10min_data'],
         "Precip_24h": getattr(extracted_precips, 'precip_sum', None) if extracted_precips else None,
-        "Number_of_precip_measurements": getattr(extracted_precips, 'all_precip_amount', None) if extracted_precips else None
+        "Number_of_precip_measurements": getattr(extracted_precips, 'all_precip_amount', None) if extracted_precips else None,
+        "Hourly": hourly_data
     }
     properties = {k: v for k, v in raw_properties.items() if v is not None}
 
@@ -276,6 +301,29 @@ async def process_missing_station(session, station_info, przymrozki_data):
 
     extracted_temps = extract_temperature_data(temperature_data, przymrozki_data, station_info.get("Station_name"), station_info.get("coordinates")[0], station_info.get("coordinates")[1])
     extracted_precips = extract_precip_data(temperature_data)
+    
+    hourly_data = {f"{h:02d}": {} for h in range(24)}
+    if temperature_data and isinstance(temperature_data.get("temperature"), list):
+        for t in temperature_data["temperature"]:
+            if t.get("value") is not None and t.get("date") is not None:
+                try:
+                    dt_utc = parser.isoparse(t["date"])
+                    dt_local = dt_utc.astimezone(local_tz)
+                    if dt_local.year == year and dt_local.month == month and dt_local.day == day:
+                        hourly_data[f"{dt_local.hour:02d}"]["Ta"] = t["value"]
+                except Exception:
+                    continue
+
+    if temperature_data and isinstance(temperature_data.get("precip"), list):
+        for p in temperature_data["precip"]:
+            if p.get("value") is not None and p.get("date") is not None:
+                try:
+                    dt_utc = parser.isoparse(p["date"])
+                    dt_local = dt_utc.astimezone(local_tz)
+                    if dt_local.year == year and dt_local.month == month and dt_local.day == day:
+                        hourly_data[f"{dt_local.hour:02d}"]["Precip"] = p["value"]
+                except Exception:
+                    continue
          
     raw_properties = {
         "Station_id": station_info.get("Station_id"),
@@ -294,7 +342,8 @@ async def process_missing_station(session, station_info, przymrozki_data):
         "Tmax_time": getattr(extracted_temps, 'temp_max_time', None) if extracted_temps else None,
         "Number_of_measurements": getattr(extracted_temps, 'all_temps_amount', None) if extracted_temps else None,
         "Precip_24h": getattr(extracted_precips, 'precip_sum', None) if extracted_precips else None,
-        "Number_of_precip_measurements": getattr(extracted_precips, 'all_precip_amount', None) if extracted_precips else None
+        "Number_of_precip_measurements": getattr(extracted_precips, 'all_precip_amount', None) if extracted_precips else None,
+        "Hourly": hourly_data
     }
     properties = {k: v for k, v in raw_properties.items() if v is not None}
 
@@ -321,7 +370,7 @@ def process_closed_station(station_info):
 
 async def main():
     async with aiohttp.ClientSession() as session:
-        imgw_data = await fetch_json(session, url)
+        imgw_data = await fetch_json(url=url)
         if not imgw_data:
             print("Błąd pobierania danych IMGW.")
             return
@@ -352,7 +401,6 @@ async def main():
             closed_features = [process_closed_station(station_info) for station_info in closed_stations]
             features.extend(closed_features)
 
-        # Przygotuj strukturę katalogów i nazwę pliku z datą (YYYY-MM-DD)
         date_str = f"{year}-{addZero(month)}-{addZero(day)}"
         out_dir = "imgw_data"
         os.makedirs(out_dir, exist_ok=True)
@@ -362,21 +410,18 @@ async def main():
 
         payload = {"type": "FeatureCollection", "features": features}
 
-        # Zapisz datowany plik
         try:
             with open(dated_path, "w", encoding="utf-8") as f:
                 json.dump(payload, f, ensure_ascii=False, indent=4)
         except Exception as e:
             print(f"Błąd zapisu datowanego pliku {dated_path}: {e}")
 
-        # Zapisz plik z najnowszymi danymi (kompatybilność z frontendem)
         try:
             with open(latest_path, "w", encoding="utf-8") as f:
                 json.dump(payload, f, ensure_ascii=False, indent=4)
         except Exception as e:
             print(f"Błąd zapisu pliku {latest_path}: {e}")
 
-        # Zaktualizuj indeks dostępnych dat
         dates_file = os.path.join(out_dir, "dates.json")
         dates = []
         try:
@@ -390,7 +435,6 @@ async def main():
 
         if date_str not in dates:
             dates.append(date_str)
-            # sortuj malejąco (najpierw najnowsze)
             dates = sorted(dates, reverse=True)
             try:
                 with open(dates_file, "w", encoding="utf-8") as df:

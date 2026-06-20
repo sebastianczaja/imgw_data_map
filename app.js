@@ -43,6 +43,9 @@ const etykietyStationName = L.layerGroup();
 
 etykietyTa.addTo(map);
 
+// Zmienna globalna przechowująca pobrany plik GeoJSON
+let globalGeoJsonData = null;
+
 function getMarkerStyle(feature) {
     const status = feature.properties.Status;
     return {
@@ -129,7 +132,6 @@ function addDataToParamGroup(rawValue, suffix, className, positionClass, latlng,
     }
 }
 
-// map data utilities: clear, process and load dated files
 function clearMapData() {
     [etykietyTa, etykietyTmin, etykietyTmax, etykietyTminHour, etykietyTmaxHour, etykietyTg, etykietyOpady24h, etykietyOpady10min, etykietyWindAvg, etykietyWindMax, etykietyElevation, etykietyStationName, stacjeZamkniete].forEach(g => { try { g.clearLayers(); } catch (e){} });
 }
@@ -137,9 +139,24 @@ function clearMapData() {
 let layersControl = null;
 
 function processData(data) {
+    globalGeoJsonData = data; // Zapamiętaj pobrane dane
+    
+    // Pobierz aktualną wartość z suwaka godzinowego, aby zainicjować mapę
+    const hourSlider = document.getElementById('hourSlider');
+    const selectedHour = hourSlider ? String(hourSlider.value).padStart(2, '0') : '12';
+    
+    renderDataForHour(selectedHour);
+}
+
+// Funkcja odpowiedzialna za przerysowywanie warstw dla wybranej godziny
+function renderDataForHour(hourStr) {
+    clearMapData();
+    if (!globalGeoJsonData) return;
+
     let extremes = { Ta: { min: Infinity, max: -Infinity }, Tmin: { min: Infinity, max: -Infinity }, Tmax: { min: Infinity, max: -Infinity }, Tmin_hour: { min: Infinity, max: -Infinity }, Tmax_hour: { min: Infinity, max: -Infinity }, Tg: { min: Infinity, max: -Infinity }, Wind_avg: { min: Infinity, max: -Infinity }, Wind_max: { min: Infinity, max: -Infinity }, Precip_24h: { max: -Infinity }, Precip_10min: { max: -Infinity } };
 
-    data.features.forEach(f => {
+    // Wyznaczanie ekstremów dobowych dla aktualnego pliku
+    globalGeoJsonData.features.forEach(f => {
         const p = f.properties;
         if (p.Status === 'ACTIVE') {
             const wAvg = convertMetersPerSecondToKilometersPerHour(p.Wind_avg), wMax = convertMetersPerSecondToKilometersPerHour(p.Wind_max);
@@ -156,18 +173,34 @@ function processData(data) {
         }
     });
 
-    L.geoJSON(data, {
+    L.geoJSON(globalGeoJsonData, {
         pointToLayer: function (feature, latlng) {
             const props = feature.properties;
             const wAvgKmh = convertMetersPerSecondToKilometersPerHour(props.Wind_avg), wMaxKmh = convertMetersPerSecondToKilometersPerHour(props.Wind_max);
-            const fTa = formatValue(props.Ta, 1), fTmin = formatValue(props.Tmin, 1), fTmax = formatValue(props.Tmax, 1), fTminHour = formatValue(props.Tmin_hour, 1), fTmaxHour = formatValue(props.Tmax_hour, 1), fTg = formatValue(props.Tg, 1), fPrecip24h = formatValue(props.Precip_24h, 1), fPrecip10min = formatValue(props.Precip_10min, 1), fWindAvg = formatValue(wAvgKmh, 1), fWindMax = formatValue(wMaxKmh, 1), fElevation = formatValue(props.Elevation, 0);
+            
+            // Pobieranie wartości dedykowanych dla wybranej na suwaku godziny
+            let hourlyTa = props.Hourly && props.Hourly[hourStr] && props.Hourly[hourStr].Ta !== undefined ? props.Hourly[hourStr].Ta : null;
+            let hourlyPrecip = props.Hourly && props.Hourly[hourStr] && props.Hourly[hourStr].Precip !== undefined ? props.Hourly[hourStr].Precip : null;
+
+            const fTa = formatValue(hourlyTa, 1), 
+                  fTmin = formatValue(props.Tmin, 1), 
+                  fTmax = formatValue(props.Tmax, 1), 
+                  fTminHour = formatValue(props.Tmin_hour, 1), 
+                  fTmaxHour = formatValue(props.Tmax_hour, 1), 
+                  fTg = formatValue(props.Tg, 1), 
+                  fPrecip24h = formatValue(props.Precip_24h, 1), 
+                  fPrecip10min = formatValue(props.Precip_10min, 1), 
+                  fWindAvg = formatValue(wAvgKmh, 1), 
+                  fWindMax = formatValue(wMaxKmh, 1), 
+                  fElevation = formatValue(props.Elevation, 0);
 
             let popupContent = `<h3>${props.Station_name || 'Stacja pomiarowa'}</h3><hr><p><strong>ID:</strong> ${props.Station_id}</p><p><strong>Status:</strong> <span style="color:${props.Status === 'ACTIVE' ? '#2ecc71' : '#e74c3c'}; font-weight:bold;">${props.Status === 'ACTIVE' ? 'Aktywna' : 'Zamknięta'}</span></p>`;
             if (fElevation !== null) popupContent += `<p><strong>Wysokość:</strong> ${fElevation} m n.p.m.</p>`;
-            if (fTa !== null) popupContent += `<p><strong>Ta:</strong> ${fTa}°C</p>`;
-            if (fTmin !== null) popupContent += `<p><strong>Tmin:</strong> ${fTmin}°C</p>`;
-            if (fTmax !== null) popupContent += `<p><strong>Tmax:</strong> ${fTmax}°C</p>`;
-            if (fPrecip24h !== null) popupContent += `<p><strong>Opad 24h:</strong> ${fPrecip24h} mm</p>`;
+            if (fTa !== null) popupContent += `<p><strong>Temperatura (${hourStr}:00):</strong> ${fTa}°C</p>`;
+            if (hourlyPrecip !== null) popupContent += `<p><strong>Opad godzinowy:</strong> ${formatValue(hourlyPrecip, 1)} mm</p>`;
+            if (fTmin !== null) popupContent += `<p><strong>Tmin (dobowe):</strong> ${fTmin}°C</p>`;
+            if (fTmax !== null) popupContent += `<p><strong>Tmax (dobowe):</strong> ${fTmax}°C</p>`;
+            if (fPrecip24h !== null) popupContent += `<p><strong>Opad dobowy (24h):</strong> ${fPrecip24h} mm</p>`;
             if (fWindAvg !== null) popupContent += `<p><strong>Wiatr średni:</strong> ${fWindAvg} km/h</p>`;
 
             if (props.Status === 'ACTIVE') {
@@ -179,14 +212,24 @@ function processData(data) {
                     return '';
                 };
 
-                addDataToParamGroup(props.Ta, '°C', 'temp-aktualna', 'etykieta-gora', latlng, popupContent, feature, etykietyTa, false, getEx(props.Ta, 'Ta'));
+                // Dodawanie wartości o ile istnieją dla konkretnej godziny
+                if (hourlyTa !== null) {
+                    addDataToParamGroup(hourlyTa, '°C', 'temp-aktualna', 'etykieta-gora', latlng, popupContent, feature, etykietyTa, false, getEx(hourlyTa, 'Ta'));
+                }
                 addDataToParamGroup(props.Tmin, '°C', 'temp-min', 'etykieta-dol', latlng, popupContent, feature, etykietyTmin, false, getEx(props.Tmin, 'Tmin'));
                 addDataToParamGroup(props.Tmin_hour, '°C', 'temp-min-hour', 'etykieta-dol', latlng, popupContent, feature, etykietyTminHour, false, getEx(props.Tmin_hour, 'Tmin_hour'));
                 addDataToParamGroup(props.Tmax, '°C', 'temp-max', 'etykieta-gora', latlng, popupContent, feature, etykietyTmax, false, getEx(props.Tmax, 'Tmax'));
                 addDataToParamGroup(props.Tmax_hour, '°C', 'temp-max-hour', 'etykieta-gora', latlng, popupContent, feature, etykietyTmaxHour, false, getEx(props.Tmax_hour, 'Tmax_hour'));
                 addDataToParamGroup(props.Tg, '°C', 'temp-grunt', 'etykieta-gora', latlng, popupContent, feature, etykietyTg, false, getEx(props.Tg, 'Tg'));
                 addDataToParamGroup(props.Precip_24h, ' mm', 'opad-dobowy', 'etykieta-gora', latlng, popupContent, feature, etykietyOpady24h, false, getEx(props.Precip_24h, 'Precip_24h'));
-                addDataToParamGroup(props.Precip_10min, ' mm', 'opad-10min', 'etykieta-gora', latlng, popupContent, feature, etykietyOpady10min, false, getEx(props.Precip_10min, 'Precip_10min'));
+                
+                // Przypisanie opadu wybranej godziny zamiast chwilowego 10-minutowego
+                if (hourlyPrecip !== null) {
+                    addDataToParamGroup(hourlyPrecip, ' mm', 'opad-10min', 'etykieta-gora', latlng, popupContent, feature, etykietyOpady10min, false, '');
+                } else {
+                    addDataToParamGroup(props.Precip_10min, ' mm', 'opad-10min', 'etykieta-gora', latlng, popupContent, feature, etykietyOpady10min, false, getEx(props.Precip_10min, 'Precip_10min'));
+                }
+
                 addDataToParamGroup(wAvgKmh, ' km/h', 'wiatr-avg', 'etykieta-gora', latlng, popupContent, feature, etykietyWindAvg, false, getEx(wAvgKmh, 'Wind_avg'));
                 addDataToParamGroup(wMaxKmh, ' km/h', 'wiatr-max', 'etykieta-gora', latlng, popupContent, feature, etykietyWindMax, false, getEx(wMaxKmh, 'Wind_max'));
                 addDataToParamGroup(props.Elevation, ' m n.p.m.', 'wysokosc', 'etykieta-gora', latlng, popupContent, feature, etykietyElevation, true, '');
@@ -199,16 +242,16 @@ function processData(data) {
         }
     });
 
-    // ensure layers control exists
     const baseMaps = { "Standardowy (OpenStreetMap)": osmLayer, "Satelita (Esri)": esriSatelite, "Ciemny (CartoDB)": cartoDbDark, "Topograficzny": openTopo };
     const overlayMaps = {
         "Stacje zamknięte (Status: CLOSED)": stacjeZamkniete,
         "<div class='leaflet-control-layers-separator'></div><div class='leaflet-menu-section-title'>Aktywne stacje według parametru:</div>": L.layerGroup(),
-        "Nazwa stacji (Station_name)": etykietyStationName, "Wysokość (Elevation)": etykietyElevation, "Temperatura aktualna (Ta)": etykietyTa, "Temperatura minimalna (Tmin)": etykietyTmin, "Temperatura maksymalna (Tmax)": etykietyTmax, "Temperatura min. godzinowa (Tmin_hour)": etykietyTminHour, "Temperatura max. godzinowa (Tmax_hour)": etykietyTmaxHour, "Temperatura przy gruncie (Tg)": etykietyTg, "Suma opadów (Precip_24h)": etykietyOpady24h, "Opad 10 minutowy (Precip_10min)": etykietyOpady10min, "Średni wiatr (Wind_avg)": etykietyWindAvg, "Porywy wiatru (Wind_max)": etykietyWindMax
+        "Nazwa stacji (Station_name)": etykietyStationName, "Wysokość (Elevation)": etykietyElevation, "Temperatura aktualna (Ta)": etykietyTa, "Temperatura minimalna (Tmin)": etykietyTmin, "Temperatura maksymalna (Tmax)": etykietyTmax, "Temperatura min. godzinowa (Tmin_hour)": etykietyTminHour, "Temperatura max. godzinowa (Tmax_hour)": etykietyTmaxHour, "Temperatura przy gruncie (Tg)": etykietyTg, "Suma opadów (Precip_24h)": etykietyOpady24h, "Opad wybranej godziny (Precip_hour)": etykietyOpady10min, "Średni wiatr (Wind_avg)": etykietyWindAvg, "Porywy wiatru (Wind_max)": etykietyWindMax
     };
 
     if (!layersControl) {
-        layersControl = L.control.layers(baseMaps, overlayMaps, { collapsed: false }).addTo(map);
+        // Zmiana pozycji menu warstw na lewy górny róg ('topleft')
+        layersControl = L.control.layers(baseMaps, overlayMaps, { position: 'topleft', collapsed: false }).addTo(map);
         setTimeout(() => {
             document.querySelectorAll('.leaflet-control-layers-overlays label').forEach(label => {
                 if (label.innerHTML.includes('leaflet-menu-section-title')) { const cb = label.querySelector('input'); if (cb) cb.remove(); }
@@ -232,8 +275,8 @@ function loadDataForDate(dateStr) {
     });
 }
 
-// opacity control and legend (unchanged)
-const opacityControl = L.control({ position: 'topright' });
+// Zmiana pozycji suwaka przezroczystości na lewy górny róg ('topleft')
+const opacityControl = L.control({ position: 'topleft' });
 opacityControl.onAdd = function() {
     const div = L.DomUtil.create('div', 'slider-opacity-container');
     div.innerHTML = `<label for="opacitySlider">Przezroczystość mapy:</label><input type="range" id="opacitySlider" min="0" max="1" step="0.1" value="1">`;
@@ -287,7 +330,12 @@ function initTimelineUI() {
 
     if (hourSlider) {
         updateTimeLabel(hourSlider.value || 12);
-        hourSlider.addEventListener('input', (e) => updateTimeLabel(e.target.value));
+        hourSlider.addEventListener('input', (e) => {
+            const val = e.target.value;
+            updateTimeLabel(val);
+            const hourStr = String(val).padStart(2, '0');
+            renderDataForHour(hourStr);
+        });
     }
 
     if (datePicker) {
