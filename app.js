@@ -236,7 +236,7 @@ function renderDataForHour(hourStr) {
 
     const overlayMaps = {
         "Stacje zamknięte (Status: CLOSED)": stacjeZamkniete,
-        "<div class='leaflet-control-layers-separator'></div><div class='leaflet-menu-section-title'>Aktywne stacje według parametru:</div>": L.layerGroup(),
+        "<div class='leaflet-control-layers-separator'></div><div class='leaflet-menu-section-title' style='font-weight: 800; font-size: 14px; color: #1a252f; margin: 4px 0 6px 0;'>Parametry:</div>": L.layerGroup(),
         "Nazwa stacji (Station_name)": etykietyStationName, "Wysokość (Elevation)": etykietyElevation, "Temperatura aktualna (Ta)": etykietyTa, "Temperatura minimalna (Tmin)": etykietyTmin, "Temperatura maksymalna (Tmax)": etykietyTmax, "Temperatura min. godzinowa (Tmin_hour)": etykietyTminHour, "Temperatura max. godzinowa (Tmax_hour)": etykietyTmaxHour, "Temperatura przy gruncie (Tg)": etykietyTg, "Suma opadów (Precip_24h)": etykietyOpady24h, "Opad wybranej godziny (Precip_hour)": etykietyOpady10min, "Średni wiatr (Wind_avg)": etykietyWindAvg, "Porywy wiatru (Wind_max)": etykietyWindMax
     };
 
@@ -264,7 +264,6 @@ function loadDataForDate(dateStr) {
     });
 }
 
-// Zintegrowany, kompaktowy panel "Podkład mapy" bez niepotrzebnych przerw
 const baseMapControl = L.control({ position: 'topleft' });
 baseMapControl.onAdd = function() {
     const div = L.DomUtil.create('div', 'leaflet-control-layers leaflet-control-layers-expanded custom-basemap-control');
@@ -277,7 +276,7 @@ baseMapControl.onAdd = function() {
     div.style.marginTop = '10px';
     
     div.innerHTML = `
-        <div style="font-weight: 800; font-size: 15px; color: #1a252f; margin-bottom: 8px; border-bottom: 1px solid #eee; padding-bottom: 4px;">Podkład mapy</div>
+        <div style="font-weight: 800; font-size: 14px; color: #1a252f; margin-bottom: 8px; border-bottom: 1px solid #eee; padding-bottom: 4px;">Podkład mapy</div>
         <div style="margin-bottom: 8px; font-size: 12px; line-height: 1.4;">
             <label style="cursor:pointer; display:block;"><input type="radio" name="customBaseLayer" value="osm" checked style="vertical-align:middle; margin-right:5px;">Standardowy (OSM)</label>
             <label style="cursor:pointer; display:block;"><input type="radio" name="customBaseLayer" value="esri" style="vertical-align:middle; margin-right:5px;">Satelita (Esri)</label>
@@ -285,7 +284,7 @@ baseMapControl.onAdd = function() {
             <label style="cursor:pointer; display:block;"><input type="radio" name="customBaseLayer" value="topo" style="vertical-align:middle; margin-right:5px;">Topograficzny</label>
         </div>
         <div style="border-top: 1px solid #eee; padding-top: 8px; margin-top: 4px;">
-            <label for="opacitySlider" style="display:block; font-size:11px; color:#555; margin-bottom:4px;">
+            <label for="opacitySlider" style="display:block; font-size: 14px; font-weight: 800; color: #1a252f; margin-bottom: 4px;">
                 Przezroczystość: <span id="opacityVal" style="font-weight:bold; color:#2ecc71; margin-left:2px;">100%</span>
             </label>
             <input type="range" id="opacitySlider" min="0" max="1" step="0.1" value="1" style="width: 100%; display: block; margin: 0; cursor: pointer;">
@@ -336,12 +335,52 @@ baseMapControl.onAdd = function() {
 };
 baseMapControl.addTo(map);
 
+// NOWA LEGENDA: Linie podziału przeniesione bezpośrednio na pasek koloru (CSS gradient)
 const legendControl = L.control({ position: 'bottomleft' });
 legendControl.onAdd = function() {
     const div = L.DomUtil.create('div', 'map-legend-container');
     const reversedScale = [...tempScale].reverse();
-    let html = `<div class='legend-title'>Temperatura (°C)</div><div class='legend-body'><div class='legend-bar' style='background: linear-gradient(to bottom, ${reversedScale.map(i => `rgb(${i.r},${i.g},${i.b})`).join(', ')});'></div><div class='legend-labels'>`;
-    reversedScale.forEach(i => { html += `<div class='legend-label-row'><span class='legend-tick'>—</span><span class='legend-value'>${i.t}</span></div>`; });
+    
+    // Obliczamy procentową wysokość jednego kroku skali dla idealnego wyrównania linii
+    const stepsCount = reversedScale.length;
+    const stepPercent = 100 / stepsCount;
+
+    let html = `
+        <style>
+            .map-legend-container .legend-body { display: flex; align-items: stretch; }
+            .map-legend-container .legend-bar { 
+                width: 15px; 
+                margin-right: 8px;
+                border: 1px solid #999;
+                /* Połączenie kolorowego gradientu temperatur oraz nakładki z białych linii podziału */
+                background: 
+                    repeating-linear-gradient(to bottom, transparent, transparent calc(${stepPercent}% - 1px), rgba(255,255,255,0.6) calc(${stepPercent}% - 1px), rgba(255,255,255,0.6) ${stepPercent}%),
+                    linear-gradient(to bottom, ${reversedScale.map(i => `rgb(${i.r},${i.g},${i.b})`).join(', ')});
+            }
+            .map-legend-container .legend-labels { 
+                display: flex; 
+                flex-direction: column; 
+                justify-content: space-between;
+            }
+            .map-legend-container .legend-label-row { 
+                height: calc(180px / ${stepsCount}); /* dopasowanie do wysokości paska */
+                display: flex; 
+                align-items: center; 
+                font-size: 11px;
+                line-height: 1;
+            }
+        </style>
+        <div class='legend-title'>Temperatura (°C)</div>
+        <div class='legend-body'>
+            <div class='legend-bar'></div>
+            <div class='legend-labels'>
+    `;
+    
+    // Zostawiamy same czyste wartości liczbowe, bez kresek pomiarowych obok
+    reversedScale.forEach(i => { 
+        html += `<div class='legend-label-row'><span class='legend-value'>${i.t}</span></div>`; 
+    });
+    
     div.innerHTML = html + `</div></div>`;
     return div;
 };
