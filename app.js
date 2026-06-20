@@ -242,7 +242,6 @@ function renderDataForHour(hourStr) {
         }
     });
 
-    const baseMaps = { "Standardowy (OpenStreetMap)": osmLayer, "Satelita (Esri)": esriSatelite, "Ciemny (CartoDB)": cartoDbDark, "Topograficzny": openTopo };
     const overlayMaps = {
         "Stacje zamknięte (Status: CLOSED)": stacjeZamkniete,
         "<div class='leaflet-control-layers-separator'></div><div class='leaflet-menu-section-title'>Aktywne stacje według parametru:</div>": L.layerGroup(),
@@ -250,8 +249,8 @@ function renderDataForHour(hourStr) {
     };
 
     if (!layersControl) {
-        // Zmiana pozycji menu warstw na lewy górny róg ('topleft')
-        layersControl = L.control.layers(baseMaps, overlayMaps, { position: 'topleft', collapsed: false }).addTo(map);
+        // Okienko z warstwami meteorologicznymi na lewej stronie
+        layersControl = L.control.layers(null, overlayMaps, { position: 'topleft', collapsed: false }).addTo(map);
         setTimeout(() => {
             document.querySelectorAll('.leaflet-control-layers-overlays label').forEach(label => {
                 if (label.innerHTML.includes('leaflet-menu-section-title')) { const cb = label.querySelector('input'); if (cb) cb.remove(); }
@@ -259,7 +258,6 @@ function renderDataForHour(hourStr) {
         }, 200);
     }
 
-    map.on('baselayerchange', function(e) { activeBaseLayer = e.layer; const slider = document.getElementById('opacitySlider'); if (slider) slider.value = activeBaseLayer.options.opacity ?? 1; });
     map.on('layeradd layerremove', updateLegendVisibility);
     updateLegendVisibility();
 }
@@ -275,19 +273,73 @@ function loadDataForDate(dateStr) {
     });
 }
 
-// Zmiana pozycji suwaka przezroczystości na lewy górny róg ('topleft')
-const opacityControl = L.control({ position: 'topleft' });
-opacityControl.onAdd = function() {
-    const div = L.DomUtil.create('div', 'slider-opacity-container');
-    div.innerHTML = `<label for="opacitySlider">Przezroczystość mapy:</label><input type="range" id="opacitySlider" min="0" max="1" step="0.1" value="1">`;
-    L.DomEvent.disableClickPropagation(div); L.DomEvent.disableScrollPropagation(div);
+// Zintegrowany panel "Podkład mapy" zawierający typy podkładów oraz suwak przezroczystości z procentami
+const baseMapControl = L.control({ position: 'topleft' });
+baseMapControl.onAdd = function() {
+    const div = L.DomUtil.create('div', 'leaflet-control-layers leaflet-control-layers-expanded custom-basemap-control');
+    div.style.padding = '10px';
+    div.style.background = 'white';
+    div.style.borderRadius = '4px';
+    div.style.boxShadow = '0 1px 5px rgba(0,0,0,0.4)';
+    
+    div.innerHTML = `
+        <div style="font-weight: bold; margin-bottom: 5px;" class="leaflet-menu-section-title">Podkład mapy</div>
+        <div style="margin-bottom: 8px;">
+            <label><input type="radio" name="customBaseLayer" value="osm" checked> Standardowy (OpenStreetMap)</label><br>
+            <label><input type="radio" name="customBaseLayer" value="esri"> Satelita (Esri)</label><br>
+            <label><input type="radio" name="customBaseLayer" value="carto"> Ciemny (CartoDB)</label><br>
+            <label><input type="radio" name="customBaseLayer" value="topo"> Topograficzny</label>
+        </div>
+        <div class='leaflet-control-layers-separator' style="margin: 8px 0;"></div>
+        <div class="slider-opacity-container" style="margin-top: 5px;">
+            <label for="opacitySlider" style="display:block; font-size:11px; margin-bottom:3px;">Przezroczystość podkładu: <span id="opacityVal" style="font-weight:bold; color:#2ecc71;">100%</span></label>
+            <input type="range" id="opacitySlider" min="0" max="1" step="0.1" value="1" style="width: 100%; margin: 0; display: block;">
+        </div>
+    `;
+    
+    L.DomEvent.disableClickPropagation(div); 
+    L.DomEvent.disableScrollPropagation(div);
+    
     setTimeout(() => {
-        const s = document.getElementById('opacitySlider');
-        if (s) s.addEventListener('input', function(e) { if (activeBaseLayer?.setOpacity) activeBaseLayer.setOpacity(parseFloat(e.target.value)); });
+        const radios = div.querySelectorAll('input[name="customBaseLayer"]');
+        const slider = div.querySelector('#opacitySlider');
+        const valLabel = div.querySelector('#opacityVal');
+        
+        function updateLayer(selectedVal) {
+            map.removeLayer(activeBaseLayer);
+            if (selectedVal === 'osm') activeBaseLayer = osmLayer;
+            if (selectedVal === 'esri') activeBaseLayer = esriSatelite;
+            if (selectedVal === 'carto') activeBaseLayer = cartoDbDark;
+            if (selectedVal === 'topo') activeBaseLayer = openTopo;
+            
+            const currentOpacity = parseFloat(slider.value);
+            activeBaseLayer.setOpacity(currentOpacity);
+            map.addLayer(activeBaseLayer);
+            activeBaseLayer.bringToBack();
+        }
+        
+        radios.forEach(radio => {
+            radio.addEventListener('change', function(e) {
+                updateLayer(e.target.value);
+            });
+        });
+        
+        if (slider) {
+            slider.addEventListener('input', function(e) {
+                const alpha = parseFloat(e.target.value);
+                if (activeBaseLayer && activeBaseLayer.setOpacity) {
+                    activeBaseLayer.setOpacity(alpha);
+                }
+                if (valLabel) {
+                    valLabel.textContent = Math.round(alpha * 100) + '%';
+                }
+            });
+        }
     }, 100);
+    
     return div;
 };
-opacityControl.addTo(map);
+baseMapControl.addTo(map);
 
 const legendControl = L.control({ position: 'bottomleft' });
 legendControl.onAdd = function() {
