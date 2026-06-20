@@ -18,16 +18,16 @@ const openTopo = L.tileLayer('https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png',
     attribution: 'Map data &copy; OpenStreetMap contributors'
 });
 
-let activeBaseLayer = osmLayer;
+// ZMIANA: Domyślnie ustawiona warstwa topograficzna o przezroczystości 90%
+let activeBaseLayer = openTopo;
 
 const map = L.map('map', {
     center: [52.068811, 19.479699],
     zoom: 6.5,
-    layers: [osmLayer]
+    layers: [openTopo] // Start z warstwą topograficzną
 });
 
-// layer groups
-const stacjeZamkniete = L.layerGroup();
+// layer groups (ZMIANA: usunięto stacjeZamkniete)
 const etykietyTa = L.layerGroup();
 const etykietyTmin = L.layerGroup();
 const etykietyTmax = L.layerGroup();
@@ -47,10 +47,9 @@ etykietyTa.addTo(map);
 let globalGeoJsonData = null;
 
 function getMarkerStyle(feature) {
-    const status = feature.properties.Status;
     return {
         radius: 3,
-        fillColor: status === 'ACTIVE' ? '#2ecc71' : '#e74c3c',
+        fillColor: '#2ecc71',
         color: '#000',
         weight: 1,
         opacity: 1,
@@ -133,7 +132,7 @@ function addDataToParamGroup(rawValue, suffix, className, positionClass, latlng,
 }
 
 function clearMapData() {
-    [etykietyTa, etykietyTmin, etykietyTmax, etykietyTminHour, etykietyTmaxHour, etykietyTg, etykietyOpady24h, etykietyOpady10min, etykietyWindAvg, etykietyWindMax, etykietyElevation, etykietyStationName, stacjeZamkniete].forEach(g => { try { g.clearLayers(); } catch (e){} });
+    [etykietyTa, etykietyTmin, etykietyTmax, etykietyTminHour, etykietyTmaxHour, etykietyTg, etykietyOpady24h, etykietyOpady10min, etykietyWindAvg, etykietyWindMax, etykietyElevation, etykietyStationName].forEach(g => { try { g.clearLayers(); } catch (e){} });
 }
 
 let layersControl = null;
@@ -141,7 +140,9 @@ let layersControl = null;
 function processData(data) {
     globalGeoJsonData = data; 
     const hourSlider = document.getElementById('hourSlider');
-    const selectedHour = hourSlider ? String(hourSlider.value).padStart(2, '0') : '12';
+    
+    // ZMIANA: Automatyczny start od ostatniej godziny z danymi (23:00) zamiast 12:00
+    const selectedHour = hourSlider ? String(hourSlider.value).padStart(2, '0') : '23';
     renderDataForHour(selectedHour);
 }
 
@@ -171,6 +172,8 @@ function renderDataForHour(hourStr) {
     L.geoJSON(globalGeoJsonData, {
         pointToLayer: function (feature, latlng) {
             const props = feature.properties;
+            if (props.Status !== 'ACTIVE') return null; // Pomijanie nieaktywnych stacji
+
             const wAvgKmh = convertMetersPerSecondToKilometersPerHour(props.Wind_avg), wMaxKmh = convertMetersPerSecondToKilometersPerHour(props.Wind_max);
             
             let hourlyTa = props.Hourly && props.Hourly[hourStr] && props.Hourly[hourStr].Ta !== undefined ? props.Hourly[hourStr].Ta : null;
@@ -188,7 +191,7 @@ function renderDataForHour(hourStr) {
                   fWindMax = formatValue(wMaxKmh, 1), 
                   fElevation = formatValue(props.Elevation, 0);
 
-            let popupContent = `<h3>${props.Station_name || 'Stacja pomiarowa'}</h3><hr><p><strong>ID:</strong> ${props.Station_id}</p><p><strong>Status:</strong> <span style="color:${props.Status === 'ACTIVE' ? '#2ecc71' : '#e74c3c'}; font-weight:bold;">${props.Status === 'ACTIVE' ? 'Aktywna' : 'Zamknięta'}</span></p>`;
+            let popupContent = `<h3>${props.Station_name || 'Stacja pomiarowa'}</h3><hr><p><strong>ID:</strong> ${props.Station_id}</p><p><strong>Status:</strong> <span style="color:#2ecc71; font-weight:bold;">Aktywna</span></p>`;
             if (fElevation !== null) popupContent += `<p><strong>Wysokość:</strong> ${fElevation} m n.p.m.</p>`;
             if (fTa !== null) popupContent += `<p><strong>Temperatura (${hourStr}:00):</strong> ${fTa}°C</p>`;
             if (hourlyPrecip !== null) popupContent += `<p><strong>Opad godzinowy:</strong> ${formatValue(hourlyPrecip, 1)} mm</p>`;
@@ -197,46 +200,42 @@ function renderDataForHour(hourStr) {
             if (fPrecip24h !== null) popupContent += `<p><strong>Opad dobowy (24h):</strong> ${fPrecip24h} mm</p>`;
             if (fWindAvg !== null) popupContent += `<p><strong>Wiatr średni:</strong> ${fWindAvg} km/h</p>`;
 
-            if (props.Status === 'ACTIVE') {
-                const getEx = (val, field) => {
-                    if (val == null || isNaN(val)) return '';
-                    const parsed = parseFloat(val);
-                    if (extremes[field].max !== undefined && parsed === extremes[field].max) return 'max';
-                    if (extremes[field].min !== undefined && parsed === extremes[field].min) return 'min';
-                    return '';
-                };
+            const getEx = (val, field) => {
+                if (val == null || isNaN(val)) return '';
+                const parsed = parseFloat(val);
+                if (extremes[field].max !== undefined && parsed === extremes[field].max) return 'max';
+                if (extremes[field].min !== undefined && parsed === extremes[field].min) return 'min';
+                return '';
+            };
 
-                if (hourlyTa !== null) {
-                    addDataToParamGroup(hourlyTa, '°C', 'temp-aktualna', 'etykieta-gora', latlng, popupContent, feature, etykietyTa, false, getEx(hourlyTa, 'Ta'));
-                }
-                addDataToParamGroup(props.Tmin, '°C', 'temp-min', 'etykieta-dol', latlng, popupContent, feature, etykietyTmin, false, getEx(props.Tmin, 'Tmin'));
-                addDataToParamGroup(props.Tmin_hour, '°C', 'temp-min-hour', 'etykieta-dol', latlng, popupContent, feature, etykietyTminHour, false, getEx(props.Tmin_hour, 'Tmin_hour'));
-                addDataToParamGroup(props.Tmax, '°C', 'temp-max', 'etykieta-gora', latlng, popupContent, feature, etykietyTmax, false, getEx(props.Tmax, 'Tmax'));
-                addDataToParamGroup(props.Tmax_hour, '°C', 'temp-max-hour', 'etykieta-gora', latlng, popupContent, feature, etykietyTmaxHour, false, getEx(props.Tmax_hour, 'Tmax_hour'));
-                addDataToParamGroup(props.Tg, '°C', 'temp-grunt', 'etykieta-gora', latlng, popupContent, feature, etykietyTg, false, getEx(props.Tg, 'Tg'));
-                addDataToParamGroup(props.Precip_24h, ' mm', 'opad-dobowy', 'etykieta-gora', latlng, popupContent, feature, etykietyOpady24h, false, getEx(props.Precip_24h, 'Precip_24h'));
-                
-                if (hourlyPrecip !== null) {
-                    addDataToParamGroup(hourlyPrecip, ' mm', 'opad-10min', 'etykieta-gora', latlng, popupContent, feature, etykietyOpady10min, false, '');
-                } else {
-                    addDataToParamGroup(props.Precip_10min, ' mm', 'opad-10min', 'etykieta-gora', latlng, popupContent, feature, etykietyOpady10min, false, getEx(props.Precip_10min, 'Precip_10min'));
-                }
-
-                addDataToParamGroup(wAvgKmh, ' km/h', 'wiatr-avg', 'etykieta-gora', latlng, popupContent, feature, etykietyWindAvg, false, getEx(wAvgKmh, 'Wind_avg'));
-                addDataToParamGroup(wMaxKmh, ' km/h', 'wiatr-max', 'etykieta-gora', latlng, popupContent, feature, etykietyWindMax, false, getEx(wMaxKmh, 'Wind_max'));
-                addDataToParamGroup(props.Elevation, ' m n.p.m.', 'wysokosc', 'etykieta-gora', latlng, popupContent, feature, etykietyElevation, true, '');
-                addDataToParamGroup(props.Station_name, '', 'nazwa-stacji', 'etykieta-gora', latlng, popupContent, feature, etykietyStationName, false, '');
-            } else {
-                const mZ = L.circleMarker(latlng, getMarkerStyle(feature)).bindPopup(popupContent);
-                stacjeZamkniete.addLayer(mZ);
+            if (hourlyTa !== null) {
+                addDataToParamGroup(hourlyTa, '°C', 'temp-aktualna', 'etykieta-gora', latlng, popupContent, feature, etykietyTa, false, getEx(hourlyTa, 'Ta'));
             }
+            addDataToParamGroup(props.Tmin, '°C', 'temp-min', 'etykieta-dol', latlng, popupContent, feature, etykietyTmin, false, getEx(props.Tmin, 'Tmin'));
+            addDataToParamGroup(props.Tmin_hour, '°C', 'temp-min-hour', 'etykieta-dol', latlng, popupContent, feature, etykietyTminHour, false, getEx(props.Tmin_hour, 'Tmin_hour'));
+            addDataToParamGroup(props.Tmax, '°C', 'temp-max', 'etykieta-gora', latlng, popupContent, feature, etykietyTmax, false, getEx(props.Tmax, 'Tmax'));
+            addDataToParamGroup(props.Tmax_hour, '°C', 'temp-max-hour', 'etykieta-gora', latlng, popupContent, feature, etykietyTmaxHour, false, getEx(props.Tmax_hour, 'Tmax_hour'));
+            addDataToParamGroup(props.Tg, '°C', 'temp-grunt', 'etykieta-gora', latlng, popupContent, feature, etykietyTg, false, getEx(props.Tg, 'Tg'));
+            addDataToParamGroup(props.Precip_24h, ' mm', 'opad-dobowy', 'etykieta-gora', latlng, popupContent, feature, etykietyOpady24h, false, getEx(props.Precip_24h, 'Precip_24h'));
+            
+            if (hourlyPrecip !== null) {
+                addDataToParamGroup(hourlyPrecip, ' mm', 'opad-10min', 'etykieta-gora', latlng, popupContent, feature, etykietyOpady10min, false, '');
+            } else {
+                addDataToParamGroup(props.Precip_10min, ' mm', 'opad-10min', 'etykieta-gora', latlng, popupContent, feature, etykietyOpady10min, false, getEx(props.Precip_10min, 'Precip_10min'));
+            }
+
+            addDataToParamGroup(wAvgKmh, ' km/h', 'wiatr-avg', 'etykieta-gora', latlng, popupContent, feature, etykietyWindAvg, false, getEx(wAvgKmh, 'Wind_avg'));
+            addDataToParamGroup(wMaxKmh, ' km/h', 'wiatr-max', 'etykieta-gora', latlng, popupContent, feature, etykietyWindMax, false, getEx(wMaxKmh, 'Wind_max'));
+            addDataToParamGroup(props.Elevation, ' m n.p.m.', 'wysokosc', 'etykieta-gora', latlng, popupContent, feature, etykietyElevation, true, '');
+            addDataToParamGroup(props.Station_name, '', 'nazwa-stacji', 'etykieta-gora', latlng, popupContent, feature, etykietyStationName, false, '');
+            
             return null;
         }
     });
 
+    // ZMIANA: Usunięto stacje zamknięte z menu overlayMaps
     const overlayMaps = {
-        "Stacje zamknięte (Status: CLOSED)": stacjeZamkniete,
-        "<div class='leaflet-control-layers-separator'></div><div class='leaflet-menu-section-title' style='font-weight: 800; font-size: 14px; color: #1a252f; margin: 4px 0 6px 0;'>Parametry:</div>": L.layerGroup(),
+        "<div class='leaflet-menu-section-title' style='font-weight: 800; font-size: 14px; color: #1a252f; margin: 0 0 6px 0;'>Parametry:</div>": L.layerGroup(),
         "Nazwa stacji (Station_name)": etykietyStationName, "Wysokość (Elevation)": etykietyElevation, "Temperatura aktualna (Ta)": etykietyTa, "Temperatura minimalna (Tmin)": etykietyTmin, "Temperatura maksymalna (Tmax)": etykietyTmax, "Temperatura min. godzinowa (Tmin_hour)": etykietyTminHour, "Temperatura max. godzinowa (Tmax_hour)": etykietyTmaxHour, "Temperatura przy gruncie (Tg)": etykietyTg, "Suma opadów (Precip_24h)": etykietyOpady24h, "Opad wybranej godziny (Precip_hour)": etykietyOpady10min, "Średni wiatr (Wind_avg)": etykietyWindAvg, "Porywy wiatru (Wind_max)": etykietyWindMax
     };
 
@@ -275,19 +274,20 @@ baseMapControl.onAdd = function() {
     div.style.minWidth = '200px';
     div.style.marginTop = '10px';
     
+    // ZMIANA: Dodano dwukropek do "Podkład mapy:" oraz zaktualizowano domyślny suwak przezroczystości na 90% (value="0.9") i zaznaczony podkład topo
     div.innerHTML = `
-        <div style="font-weight: 800; font-size: 14px; color: #1a252f; margin-bottom: 8px; border-bottom: 1px solid #eee; padding-bottom: 4px;">Podkład mapy</div>
+        <div style="font-weight: 800; font-size: 14px; color: #1a252f; margin-bottom: 8px; border-bottom: 1px solid #eee; padding-bottom: 4px;">Podkład mapy:</div>
         <div style="margin-bottom: 8px; font-size: 12px; line-height: 1.4;">
-            <label style="cursor:pointer; display:block;"><input type="radio" name="customBaseLayer" value="osm" checked style="vertical-align:middle; margin-right:5px;">Standardowy (OSM)</label>
+            <label style="cursor:pointer; display:block;"><input type="radio" name="customBaseLayer" value="osm" style="vertical-align:middle; margin-right:5px;">Standardowy (OSM)</label>
             <label style="cursor:pointer; display:block;"><input type="radio" name="customBaseLayer" value="esri" style="vertical-align:middle; margin-right:5px;">Satelita (Esri)</label>
             <label style="cursor:pointer; display:block;"><input type="radio" name="customBaseLayer" value="carto" style="vertical-align:middle; margin-right:5px;">Ciemny (CartoDB)</label>
-            <label style="cursor:pointer; display:block;"><input type="radio" name="customBaseLayer" value="topo" style="vertical-align:middle; margin-right:5px;">Topograficzny</label>
+            <label style="cursor:pointer; display:block;"><input type="radio" name="customBaseLayer" value="topo" checked style="vertical-align:middle; margin-right:5px;">Topograficzny</label>
         </div>
         <div style="border-top: 1px solid #eee; padding-top: 8px; margin-top: 4px;">
             <label for="opacitySlider" style="display:block; font-size: 14px; font-weight: 800; color: #1a252f; margin-bottom: 4px;">
-                Przezroczystość: <span id="opacityVal" style="font-weight:bold; color:#2ecc71; margin-left:2px;">100%</span>
+                Przezroczystość: <span id="opacityVal" style="font-weight:bold; color:#2ecc71; margin-left:2px;">90%</span>
             </label>
-            <input type="range" id="opacitySlider" min="0" max="1" step="0.1" value="1" style="width: 100%; display: block; margin: 0; cursor: pointer;">
+            <input type="range" id="opacitySlider" min="0" max="1" step="0.1" value="0.9" style="width: 100%; display: block; margin: 0; cursor: pointer;">
         </div>
     `;
     
@@ -298,6 +298,9 @@ baseMapControl.onAdd = function() {
         const radios = div.querySelectorAll('input[name="customBaseLayer"]');
         const slider = div.querySelector('#opacitySlider');
         const valLabel = div.querySelector('#opacityVal');
+        
+        // ZMIANA: Ustawienie startowej przezroczystości przy inicjalizacji
+        activeBaseLayer.setOpacity(0.9);
         
         function updateLayer(selectedVal) {
             map.removeLayer(activeBaseLayer);
@@ -335,24 +338,27 @@ baseMapControl.onAdd = function() {
 };
 baseMapControl.addTo(map);
 
-// NOWA LEGENDA: Linie podziału przeniesione bezpośrednio na pasek koloru (CSS gradient)
 const legendControl = L.control({ position: 'bottomleft' });
 legendControl.onAdd = function() {
     const div = L.DomUtil.create('div', 'map-legend-container');
     const reversedScale = [...tempScale].reverse();
-    
-    // Obliczamy procentową wysokość jednego kroku skali dla idealnego wyrównania linii
     const stepsCount = reversedScale.length;
     const stepPercent = 100 / stepsCount;
 
     let html = `
         <style>
+            /* ZMIANA: Powiększenie i pogrubienie tytułu legendy do standardu innych paneli (14px, 800) */
+            .map-legend-container .legend-title {
+                font-size: 14px;
+                font-weight: 800;
+                color: #1a252f;
+                margin-bottom: 6px;
+            }
             .map-legend-container .legend-body { display: flex; align-items: stretch; }
             .map-legend-container .legend-bar { 
                 width: 15px; 
                 margin-right: 8px;
                 border: 1px solid #999;
-                /* Połączenie kolorowego gradientu temperatur oraz nakładki z białych linii podziału */
                 background: 
                     repeating-linear-gradient(to bottom, transparent, transparent calc(${stepPercent}% - 1px), rgba(255,255,255,0.6) calc(${stepPercent}% - 1px), rgba(255,255,255,0.6) ${stepPercent}%),
                     linear-gradient(to bottom, ${reversedScale.map(i => `rgb(${i.r},${i.g},${i.b})`).join(', ')});
@@ -363,7 +369,7 @@ legendControl.onAdd = function() {
                 justify-content: space-between;
             }
             .map-legend-container .legend-label-row { 
-                height: calc(180px / ${stepsCount}); /* dopasowanie do wysokości paska */
+                height: calc(180px / ${stepsCount}); 
                 display: flex; 
                 align-items: center; 
                 font-size: 11px;
@@ -376,7 +382,6 @@ legendControl.onAdd = function() {
             <div class='legend-labels'>
     `;
     
-    // Zostawiamy same czyste wartości liczbowe, bez kresek pomiarowych obok
     reversedScale.forEach(i => { 
         html += `<div class='legend-label-row'><span class='legend-value'>${i.t}</span></div>`; 
     });
@@ -414,7 +419,10 @@ function initTimelineUI() {
     }
 
     if (hourSlider) {
-        updateTimeLabel(hourSlider.value || 12);
+        // ZMIANA: Ustawienie suwaka domyślnie na ostatnią godzinę (23:00) przy starcie
+        hourSlider.value = 23;
+        updateTimeLabel(23);
+        
         hourSlider.addEventListener('input', (e) => {
             const val = e.target.value;
             updateTimeLabel(val);
