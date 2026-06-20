@@ -139,23 +139,18 @@ function clearMapData() {
 let layersControl = null;
 
 function processData(data) {
-    globalGeoJsonData = data; // Zapamiętaj pobrane dane
-    
-    // Pobierz aktualną wartość z suwaka godzinowego, aby zainicjować mapę
+    globalGeoJsonData = data; 
     const hourSlider = document.getElementById('hourSlider');
     const selectedHour = hourSlider ? String(hourSlider.value).padStart(2, '0') : '12';
-    
     renderDataForHour(selectedHour);
 }
 
-// Funkcja odpowiedzialna za przerysowywanie warstw dla wybranej godziny
 function renderDataForHour(hourStr) {
     clearMapData();
     if (!globalGeoJsonData) return;
 
     let extremes = { Ta: { min: Infinity, max: -Infinity }, Tmin: { min: Infinity, max: -Infinity }, Tmax: { min: Infinity, max: -Infinity }, Tmin_hour: { min: Infinity, max: -Infinity }, Tmax_hour: { min: Infinity, max: -Infinity }, Tg: { min: Infinity, max: -Infinity }, Wind_avg: { min: Infinity, max: -Infinity }, Wind_max: { min: Infinity, max: -Infinity }, Precip_24h: { max: -Infinity }, Precip_10min: { max: -Infinity } };
 
-    // Wyznaczanie ekstremów dobowych dla aktualnego pliku
     globalGeoJsonData.features.forEach(f => {
         const p = f.properties;
         if (p.Status === 'ACTIVE') {
@@ -178,7 +173,6 @@ function renderDataForHour(hourStr) {
             const props = feature.properties;
             const wAvgKmh = convertMetersPerSecondToKilometersPerHour(props.Wind_avg), wMaxKmh = convertMetersPerSecondToKilometersPerHour(props.Wind_max);
             
-            // Pobieranie wartości dedykowanych dla wybranej na suwaku godziny
             let hourlyTa = props.Hourly && props.Hourly[hourStr] && props.Hourly[hourStr].Ta !== undefined ? props.Hourly[hourStr].Ta : null;
             let hourlyPrecip = props.Hourly && props.Hourly[hourStr] && props.Hourly[hourStr].Precip !== undefined ? props.Hourly[hourStr].Precip : null;
 
@@ -212,7 +206,6 @@ function renderDataForHour(hourStr) {
                     return '';
                 };
 
-                // Dodawanie wartości o ile istnieją dla konkretnej godziny
                 if (hourlyTa !== null) {
                     addDataToParamGroup(hourlyTa, '°C', 'temp-aktualna', 'etykieta-gora', latlng, popupContent, feature, etykietyTa, false, getEx(hourlyTa, 'Ta'));
                 }
@@ -223,7 +216,6 @@ function renderDataForHour(hourStr) {
                 addDataToParamGroup(props.Tg, '°C', 'temp-grunt', 'etykieta-gora', latlng, popupContent, feature, etykietyTg, false, getEx(props.Tg, 'Tg'));
                 addDataToParamGroup(props.Precip_24h, ' mm', 'opad-dobowy', 'etykieta-gora', latlng, popupContent, feature, etykietyOpady24h, false, getEx(props.Precip_24h, 'Precip_24h'));
                 
-                // Przypisanie opadu wybranej godziny zamiast chwilowego 10-minutowego
                 if (hourlyPrecip !== null) {
                     addDataToParamGroup(hourlyPrecip, ' mm', 'opad-10min', 'etykieta-gora', latlng, popupContent, feature, etykietyOpady10min, false, '');
                 } else {
@@ -249,7 +241,6 @@ function renderDataForHour(hourStr) {
     };
 
     if (!layersControl) {
-        // Okienko z warstwami meteorologicznymi na lewej stronie
         layersControl = L.control.layers(null, overlayMaps, { position: 'topleft', collapsed: false }).addTo(map);
         setTimeout(() => {
             document.querySelectorAll('.leaflet-control-layers-overlays label').forEach(label => {
@@ -273,27 +264,31 @@ function loadDataForDate(dateStr) {
     });
 }
 
-// Zintegrowany panel "Podkład mapy" zawierający typy podkładów oraz suwak przezroczystości z procentami
+// Zintegrowany, kompaktowy panel "Podkład mapy" bez niepotrzebnych przerw
 const baseMapControl = L.control({ position: 'topleft' });
 baseMapControl.onAdd = function() {
     const div = L.DomUtil.create('div', 'leaflet-control-layers leaflet-control-layers-expanded custom-basemap-control');
-    div.style.padding = '10px';
-    div.style.background = 'white';
-    div.style.borderRadius = '4px';
-    div.style.boxShadow = '0 1px 5px rgba(0,0,0,0.4)';
+    
+    div.style.padding = '12px';
+    div.style.background = '#ffffff';
+    div.style.borderRadius = '6px';
+    div.style.boxShadow = '0 2px 6px rgba(0,0,0,0.25)';
+    div.style.minWidth = '200px';
+    div.style.marginTop = '10px';
     
     div.innerHTML = `
-        <div style="font-weight: bold; margin-bottom: 5px;" class="leaflet-menu-section-title">Podkład mapy</div>
-        <div style="margin-bottom: 8px;">
-            <label><input type="radio" name="customBaseLayer" value="osm" checked> Standardowy (OpenStreetMap)</label><br>
-            <label><input type="radio" name="customBaseLayer" value="esri"> Satelita (Esri)</label><br>
-            <label><input type="radio" name="customBaseLayer" value="carto"> Ciemny (CartoDB)</label><br>
-            <label><input type="radio" name="customBaseLayer" value="topo"> Topograficzny</label>
+        <div style="font-weight: 800; font-size: 15px; color: #1a252f; margin-bottom: 8px; border-bottom: 1px solid #eee; padding-bottom: 4px;">Podkład mapy</div>
+        <div style="margin-bottom: 8px; font-size: 12px; line-height: 1.4;">
+            <label style="cursor:pointer; display:block;"><input type="radio" name="customBaseLayer" value="osm" checked style="vertical-align:middle; margin-right:5px;">Standardowy (OSM)</label>
+            <label style="cursor:pointer; display:block;"><input type="radio" name="customBaseLayer" value="esri" style="vertical-align:middle; margin-right:5px;">Satelita (Esri)</label>
+            <label style="cursor:pointer; display:block;"><input type="radio" name="customBaseLayer" value="carto" style="vertical-align:middle; margin-right:5px;">Ciemny (CartoDB)</label>
+            <label style="cursor:pointer; display:block;"><input type="radio" name="customBaseLayer" value="topo" style="vertical-align:middle; margin-right:5px;">Topograficzny</label>
         </div>
-        <div class='leaflet-control-layers-separator' style="margin: 8px 0;"></div>
-        <div class="slider-opacity-container" style="margin-top: 5px;">
-            <label for="opacitySlider" style="display:block; font-size:11px; margin-bottom:3px;">Przezroczystość podkładu: <span id="opacityVal" style="font-weight:bold; color:#2ecc71;">100%</span></label>
-            <input type="range" id="opacitySlider" min="0" max="1" step="0.1" value="1" style="width: 100%; margin: 0; display: block;">
+        <div style="border-top: 1px solid #eee; padding-top: 8px; margin-top: 4px;">
+            <label for="opacitySlider" style="display:block; font-size:11px; color:#555; margin-bottom:4px;">
+                Przezroczystość: <span id="opacityVal" style="font-weight:bold; color:#2ecc71; margin-left:2px;">100%</span>
+            </label>
+            <input type="range" id="opacitySlider" min="0" max="1" step="0.1" value="1" style="width: 100%; display: block; margin: 0; cursor: pointer;">
         </div>
     `;
     
@@ -346,7 +341,7 @@ legendControl.onAdd = function() {
     const div = L.DomUtil.create('div', 'map-legend-container');
     const reversedScale = [...tempScale].reverse();
     let html = `<div class='legend-title'>Temperatura (°C)</div><div class='legend-body'><div class='legend-bar' style='background: linear-gradient(to bottom, ${reversedScale.map(i => `rgb(${i.r},${i.g},${i.b})`).join(', ')});'></div><div class='legend-labels'>`;
-    reversedScale.forEach(i => { html += `<div class='legend-label-row'><span class='legend-tick'>—</span><span class='legend-value'>${i.t > 0 ? '+' + i.t : i.t}</span></div>`; });
+    reversedScale.forEach(i => { html += `<div class='legend-label-row'><span class='legend-tick'>—</span><span class='legend-value'>${i.t}</span></div>`; });
     div.innerHTML = html + `</div></div>`;
     return div;
 };
@@ -358,7 +353,6 @@ function updateLegendVisibility() {
     if (el) el.style.display = isVisible ? 'block' : 'none';
 }
 
-// timeline UI init
 function initTimelineUI() {
     const datePicker = document.getElementById('datePicker');
     const hourSlider = document.getElementById('hourSlider');
