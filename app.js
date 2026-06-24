@@ -18,16 +18,15 @@ const openTopo = L.tileLayer('https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png',
     attribution: 'Map data &copy; OpenStreetMap contributors'
 });
 
-// ZMIANA: Domyślnie ustawiona warstwa topograficzna o przezroczystości 90%
 let activeBaseLayer = openTopo;
 
 const map = L.map('map', {
     center: [52.068811, 19.479699],
     zoom: 6.5,
-    layers: [openTopo] // Start z warstwą topograficzną
+    layers: [openTopo]
 });
 
-// layer groups (ZMIANA: usunięto stacjeZamkniete)
+// layer groups
 const etykietyTa = L.layerGroup();
 const etykietyTmin = L.layerGroup();
 const etykietyTmax = L.layerGroup();
@@ -43,7 +42,6 @@ const etykietyStationName = L.layerGroup();
 
 etykietyTa.addTo(map);
 
-// Zmienna globalna przechowująca pobrany plik GeoJSON
 let globalGeoJsonData = null;
 
 function getMarkerStyle(feature) {
@@ -141,8 +139,8 @@ function processData(data) {
     globalGeoJsonData = data; 
     const hourSlider = document.getElementById('hourSlider');
     
-    // ZMIANA: Automatyczny start od ostatniej godziny z danymi (23:00) zamiast 12:00
-    const selectedHour = hourSlider ? String(hourSlider.value).padStart(2, '0') : '23';
+    // Pobieranie wartości suwaka (jeśli jest zainicjalizowany, weźmie wyliczoną aktualną godzinę)
+    const selectedHour = hourSlider ? String(hourSlider.value).padStart(2, '0') : '12';
     renderDataForHour(selectedHour);
 }
 
@@ -172,7 +170,7 @@ function renderDataForHour(hourStr) {
     L.geoJSON(globalGeoJsonData, {
         pointToLayer: function (feature, latlng) {
             const props = feature.properties;
-            if (props.Status !== 'ACTIVE') return null; // Pomijanie nieaktywnych stacji
+            if (props.Status !== 'ACTIVE') return null;
 
             const wAvgKmh = convertMetersPerSecondToKilometersPerHour(props.Wind_avg), wMaxKmh = convertMetersPerSecondToKilometersPerHour(props.Wind_max);
             
@@ -233,7 +231,6 @@ function renderDataForHour(hourStr) {
         }
     });
 
-    // ZMIANA: Usunięto stacje zamknięte z menu overlayMaps
     const overlayMaps = {
         "<div class='leaflet-menu-section-title' style='font-weight: 800; font-size: 14px; color: #1a252f; margin: 0 0 6px 0;'>Parametry:</div>": L.layerGroup(),
         "Nazwa stacji (Station_name)": etykietyStationName, "Wysokość (Elevation)": etykietyElevation, "Temperatura aktualna (Ta)": etykietyTa, "Temperatura minimalna (Tmin)": etykietyTmin, "Temperatura maksymalna (Tmax)": etykietyTmax, "Temperatura min. godzinowa (Tmin_hour)": etykietyTminHour, "Temperatura max. godzinowa (Tmax_hour)": etykietyTmaxHour, "Temperatura przy gruncie (Tg)": etykietyTg, "Suma opadów (Precip_24h)": etykietyOpady24h, "Opad wybranej godziny (Precip_hour)": etykietyOpady10min, "Średni wiatr (Wind_avg)": etykietyWindAvg, "Porywy wiatru (Wind_max)": etykietyWindMax
@@ -274,7 +271,6 @@ baseMapControl.onAdd = function() {
     div.style.minWidth = '200px';
     div.style.marginTop = '10px';
     
-    // ZMIANA: Dodano dwukropek do "Podkład mapy:" oraz zaktualizowano domyślny suwak przezroczystości na 90% (value="0.9") i zaznaczony podkład topo
     div.innerHTML = `
         <div style="font-weight: 800; font-size: 14px; color: #1a252f; margin-bottom: 8px; border-bottom: 1px solid #eee; padding-bottom: 4px;">Podkład mapy:</div>
         <div style="margin-bottom: 8px; font-size: 12px; line-height: 1.4;">
@@ -299,7 +295,6 @@ baseMapControl.onAdd = function() {
         const slider = div.querySelector('#opacitySlider');
         const valLabel = div.querySelector('#opacityVal');
         
-        // ZMIANA: Ustawienie startowej przezroczystości przy inicjalizacji
         activeBaseLayer.setOpacity(0.9);
         
         function updateLayer(selectedVal) {
@@ -347,7 +342,6 @@ legendControl.onAdd = function() {
 
     let html = `
         <style>
-            /* ZMIANA: Powiększenie i pogrubienie tytułu legendy do standardu innych paneli (14px, 800) */
             .map-legend-container .legend-title {
                 font-size: 14px;
                 font-weight: 800;
@@ -418,10 +412,17 @@ function initTimelineUI() {
         if (span) span.textContent = (val < 10 ? '0' + val : val) + ':00';
     }
 
+    // ZMIANA: Dynamiczne wyliczenie aktualnej daty oraz ostatniej pełnej godziny systemowej
+    const now = new Date();
+    const todayStr = now.toISOString().slice(0, 10); // Format YYYY-MM-DD
+    
+    // Ostatnia pełna godzina (aktualna godzina minus 1). Zabezpieczenie przed przejściem poniżej zera.
+    let targetHour = now.getHours() - 1;
+    if (targetHour < 0) targetHour = 23; 
+
     if (hourSlider) {
-        // ZMIANA: Ustawienie suwaka domyślnie na ostatnią godzinę (23:00) przy starcie
-        hourSlider.value = 23;
-        updateTimeLabel(23);
+        hourSlider.value = targetHour;
+        updateTimeLabel(targetHour);
         
         hourSlider.addEventListener('input', (e) => {
             const val = e.target.value;
@@ -432,15 +433,23 @@ function initTimelineUI() {
     }
 
     if (datePicker) {
+        // ZMIANA: Domyślnie ładujemy dzisiejszą datę systemową, aby uniknąć opóźnień z pliku JSON
+        datePicker.value = todayStr;
+        loadDataForDate(todayStr);
+
+        // Opcjonalnie pobieramy plik z datami w tle, aby sprawdzić czy dzisiejszy plik na pewno fizycznie istnieje w bazie danych
         fetch('imgw_data/dates.json').then(r => { if (!r.ok) throw new Error('no dates'); return r.json(); }).then(dates => {
             if (Array.isArray(dates) && dates.length) {
-                const last = dates[dates.length - 1];
-                datePicker.value = last;
-                loadDataForDate(last);
-            } else {
-                datePicker.value = new Date().toISOString().slice(0,10);
+                // Jeśli z jakiegoś powodu dzisiejszej daty nie ma jeszcze w spisie (np. awaria bota), cofnij do ostatniego dostępnego dnia
+                if (!dates.includes(todayStr)) {
+                    const lastAvailableDate = dates[dates.length - 1];
+                    datePicker.value = lastAvailableDate;
+                    loadDataForDate(lastAvailableDate);
+                }
             }
-        }).catch(err => { datePicker.value = new Date().toISOString().slice(0,10); console.warn('Could not load dates.json:', err); });
+        }).catch(err => { 
+            console.warn('Wyszukiwanie pliku dates.json nie powiodło się, pozostaję przy dacie systemowej:', err); 
+        });
 
         datePicker.addEventListener('change', () => {
             loadDataForDate(datePicker.value);
