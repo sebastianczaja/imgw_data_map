@@ -370,7 +370,7 @@ def process_closed_station(station_info):
 
 async def main():
     async with aiohttp.ClientSession() as session:
-        imgw_data = await fetch_json(url=url)
+        imgw_data = await fetch_json(session, url=url)
         if not imgw_data:
             print("Błąd pobierania danych IMGW.")
             return
