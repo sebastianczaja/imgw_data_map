@@ -6,6 +6,10 @@ on:
     - cron: '15,45 * * * *'  
   workflow_dispatch:     # Pozwala te� uruchomi� skrypt r�cznie jednym klikni�ciem
 
+concurrency:
+  group: imgw-data-update
+  cancel-in-progress: false
+
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
