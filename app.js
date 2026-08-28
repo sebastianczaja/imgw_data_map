@@ -201,8 +201,9 @@ function renderDataForHour(hourStr) {
             const getEx = (val, field) => {
                 if (val == null || isNaN(val)) return '';
                 const parsed = parseFloat(val);
-                if (extremes[field].max !== undefined && parsed === extremes[field].max) return 'max';
-                if (extremes[field].min !== undefined && parsed === extremes[field].min) return 'min';
+                const tolerance = 1e-8;
+                if (extremes[field].max !== undefined && Math.abs(parsed - extremes[field].max) <= tolerance) return 'max';
+                if (extremes[field].min !== undefined && Math.abs(parsed - extremes[field].min) <= tolerance) return 'min';
                 return '';
             };
 
