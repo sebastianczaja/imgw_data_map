@@ -154,7 +154,10 @@ function renderDataForHour(hourStr) {
         const p = f.properties;
         if (p.Status === 'ACTIVE') {
             const wAvg = convertMetersPerSecondToKilometersPerHour(p.Wind_avg), wMax = convertMetersPerSecondToKilometersPerHour(p.Wind_max);
-            if (p.Ta != null) { extremes.Ta.min = Math.min(extremes.Ta.min, p.Ta); extremes.Ta.max = Math.max(extremes.Ta.max, p.Ta); }
+            const hourlyTa = p.Hourly && p.Hourly[hourStr] && p.Hourly[hourStr].Ta !== undefined ? p.Hourly[hourStr].Ta : null;
+            const hourlyPrecip = p.Hourly && p.Hourly[hourStr] && p.Hourly[hourStr].Precip !== undefined ? p.Hourly[hourStr].Precip : null;
+
+            if (hourlyTa != null) { extremes.Ta.min = Math.min(extremes.Ta.min, hourlyTa); extremes.Ta.max = Math.max(extremes.Ta.max, hourlyTa); }
             if (p.Tmin != null) { extremes.Tmin.min = Math.min(extremes.Tmin.min, p.Tmin); extremes.Tmin.max = Math.max(extremes.Tmin.max, p.Tmin); }
             if (p.Tmax != null) { extremes.Tmax.min = Math.min(extremes.Tmax.min, p.Tmax); extremes.Tmax.max = Math.max(extremes.Tmax.max, p.Tmax); }
             if (p.Tmin_hour != null) { extremes.Tmin_hour.min = Math.min(extremes.Tmin_hour.min, p.Tmin_hour); extremes.Tmin_hour.max = Math.max(extremes.Tmin_hour.max, p.Tmin_hour); }
@@ -163,7 +166,7 @@ function renderDataForHour(hourStr) {
             if (wAvg != null) { extremes.Wind_avg.min = Math.min(extremes.Wind_avg.min, wAvg); extremes.Wind_avg.max = Math.max(extremes.Wind_avg.max, wAvg); }
             if (wMax != null) { extremes.Wind_max.min = Math.min(extremes.Wind_max.min, wMax); extremes.Wind_max.max = Math.max(extremes.Wind_max.max, wMax); }
             if (p.Precip_24h != null) extremes.Precip_24h.max = Math.max(extremes.Precip_24h.max, p.Precip_24h);
-            if (p.Precip_10min != null) extremes.Precip_10min.max = Math.max(extremes.Precip_10min.max, p.Precip_10min);
+            if (hourlyPrecip != null) extremes.Precip_10min.max = Math.max(extremes.Precip_10min.max, hourlyPrecip);
         }
     });
 
@@ -218,7 +221,7 @@ function renderDataForHour(hourStr) {
             addDataToParamGroup(props.Precip_24h, ' mm', 'opad-dobowy', 'etykieta-gora', latlng, popupContent, feature, etykietyOpady24h, false, getEx(props.Precip_24h, 'Precip_24h'));
             
             if (hourlyPrecip !== null) {
-                addDataToParamGroup(hourlyPrecip, ' mm', 'opad-10min', 'etykieta-gora', latlng, popupContent, feature, etykietyOpady10min, false, '');
+                addDataToParamGroup(hourlyPrecip, ' mm', 'opad-10min', 'etykieta-gora', latlng, popupContent, feature, etykietyOpady10min, false, getEx(hourlyPrecip, 'Precip_10min'));
             } else {
                 addDataToParamGroup(props.Precip_10min, ' mm', 'opad-10min', 'etykieta-gora', latlng, popupContent, feature, etykietyOpady10min, false, getEx(props.Precip_10min, 'Precip_10min'));
             }
