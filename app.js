@@ -381,52 +381,43 @@ baseMapControl.addTo(map);
 
 const legendControl = L.control({ position: 'bottomleft' });
 legendControl.onAdd = function() {
-    const div = L.DomUtil.create('div', 'map-legend-container');
+    const div = L.DomUtil.create('div', 'map-legend-container compact-panel');
     const reversedScale = [...tempScale].reverse();
     const stepsCount = reversedScale.length;
     const stepPercent = 100 / stepsCount;
 
-    let html = `
-        <style>
-            .map-legend-container .legend-title {
-                font-size: 14px;
-                font-weight: 800;
-                color: #1a252f;
-                margin-bottom: 6px;
-            }
-            .map-legend-container .legend-body { display: flex; align-items: stretch; }
-            .map-legend-container .legend-bar { 
-                width: 15px; 
-                margin-right: 8px;
+    div.innerHTML = `
+        <div class="panel-header">
+            <button type="button" class="panel-toggle-btn" aria-label="Zwiń/rozwiń okno legendy" title="Zwiń/rozwiń okno legendy">▾</button>
+            <div class="panel-title">Legenda:</div>
+        </div>
+        <div class="legend-subtitle" style="font-size:11px; color:#374151; font-weight:700; margin: 5px 0 10px 0;">Temperatura:</div>
+        <div class="legend-body" style="display:flex; align-items:stretch; height: 242px;">
+            <div class="legend-bar" style="
+                width: 7px;
+                margin-right: 6px;
                 border: 1px solid #999;
-                background: 
+                background:
                     repeating-linear-gradient(to bottom, transparent, transparent calc(${stepPercent}% - 1px), rgba(255,255,255,0.6) calc(${stepPercent}% - 1px), rgba(255,255,255,0.6) ${stepPercent}%),
                     linear-gradient(to bottom, ${reversedScale.map(i => `rgb(${i.r},${i.g},${i.b})`).join(', ')});
-            }
-            .map-legend-container .legend-labels { 
-                display: flex; 
-                flex-direction: column; 
-                justify-content: space-between;
-            }
-            .map-legend-container .legend-label-row { 
-                height: calc(180px / ${stepsCount}); 
-                display: flex; 
-                align-items: center; 
-                font-size: 11px;
-                line-height: 1;
-            }
-        </style>
-        <div class='legend-title'>Temperatura (°C)</div>
-        <div class='legend-body'>
-            <div class='legend-bar'></div>
-            <div class='legend-labels'>
+            "></div>
+            <div class="legend-labels" style="display:flex; flex-direction:column; justify-content:space-between; gap: 0; min-width: 0;">
+                ${reversedScale.map(i => `<div class="legend-label-row" style="height: calc(242px / ${stepsCount}); display:flex; align-items:center; font-size:9.1px; line-height:1; letter-spacing:-0.03em;"> <span class="legend-value" style="font-weight:400; color:#374151; opacity:0.8; display:inline-block; min-width:0; white-space:nowrap;">${i.t}°C</span></div>`).join('')}
+            </div>
+        </div>
     `;
-    
-    reversedScale.forEach(i => { 
-        html += `<div class='legend-label-row'><span class='legend-value'>${i.t}</span></div>`; 
-    });
-    
-    div.innerHTML = html + `</div></div>`;
+
+    const toggle = div.querySelector('.panel-toggle-btn');
+    if (toggle) {
+        toggle.addEventListener('click', () => {
+            const collapsed = div.classList.toggle('collapsed');
+            toggle.textContent = collapsed ? '▸' : '▾';
+        });
+    }
+
+    L.DomEvent.disableClickPropagation(div);
+    L.DomEvent.disableScrollPropagation(div);
+
     return div;
 };
 legendControl.addTo(map);

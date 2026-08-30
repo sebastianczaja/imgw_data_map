@@ -121,29 +121,115 @@
         }
         .compact-panel .panel-title {
             order: 1;
-            font-size: 14px;
+            font-size: 13px;
             font-weight: 700;
             letter-spacing: -0.02em;
             color: #1a252f;
             line-height: 1.2;
             white-space: nowrap;
         }
+        .map-legend-container {
+            width: 148px;
+            max-width: 148px;
+            min-width: 148px;
+            box-sizing: border-box;
+            background: rgba(255,255,255,0.96);
+            border-radius: 6px;
+            box-shadow: 0 2px 6px rgba(0,0,0,0.2);
+            padding: 8px 10px;
+            margin-top: 0;
+            margin-bottom: 0;
+            margin-left: 0;
+        }
+        .map-legend-container .panel-header {
+            display: flex;
+            flex-direction: row;
+            justify-content: flex-start;
+            align-items: center;
+            margin-bottom: 2px;
+            padding-bottom: 2px;
+            width: 100%;
+            box-sizing: border-box;
+        }
+        .map-legend-container .panel-toggle-btn {
+            order: 0;
+            margin-left: 0;
+            margin-right: 6px;
+            transform: none;
+        }
+        .map-legend-container .panel-title {
+            order: 1;
+            margin-right: 0;
+            font-size: 13px;
+        }
         .compact-panel.collapsed {
-            width: 38px !important;
-            max-width: 38px !important;
+            width: auto !important;
+            max-width: max-content !important;
+            min-width: fit-content !important;
             padding: 8px 7px !important;
         }
-        .compact-panel.collapsed .panel-title,
+        .compact-panel.collapsed .panel-title {
+            display: block !important;
+            visibility: visible !important;
+            opacity: 1 !important;
+            white-space: nowrap;
+            overflow: visible;
+        }
         .compact-panel.collapsed .leaflet-control-layers-list,
         .compact-panel.collapsed .basemap-body,
-        .compact-panel.collapsed .basemap-footer {
+        .compact-panel.collapsed .basemap-footer,
+        .compact-panel.collapsed .legend-subtitle,
+        .compact-panel.collapsed .legend-body {
             display: none !important;
         }
         .compact-panel.collapsed .panel-header {
             margin-bottom: 0;
             padding-bottom: 0;
             border-bottom: none;
-            justify-content: center;
+            justify-content: flex-start;
+            gap: 6px;
+            width: max-content;
+        }
+        .map-legend-container.compact-panel.collapsed {
+            width: auto !important;
+            max-width: max-content !important;
+            min-width: fit-content !important;
+            padding: 8px 7px !important;
+            margin: 0 !important;
+            display: block !important;
+            position: relative !important;
+            top: auto !important;
+            bottom: auto !important;
+            align-self: flex-start !important;
+        }
+        .map-legend-container.compact-panel.collapsed .panel-header {
+            justify-content: flex-start;
+            display: flex;
+            width: max-content;
+            align-self: flex-start;
+            margin: 0 !important;
+            padding: 0 !important;
+            border-bottom: none !important;
+        }
+        .leaflet-bottom.leaflet-left {
+            top: auto !important;
+            bottom: 0 !important;
+            left: 0 !important;
+            right: auto !important;
+            display: block !important;
+            padding-top: 0 !important;
+        }
+        .leaflet-bottom.leaflet-left .leaflet-control {
+            margin: 0 0 10px 10px !important;
+            display: block !important;
+            float: none !important;
+            clear: both !important;
+        }
+        .leaflet-bottom.leaflet-left .map-legend-container {
+            margin-top: 0 !important;
+            margin-bottom: 10px !important;
+            position: relative !important;
+            top: 0 !important;
         }
         .leaflet-control-layers {
             width: 220px;
