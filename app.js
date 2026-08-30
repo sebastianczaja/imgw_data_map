@@ -23,8 +23,11 @@ let activeBaseLayer = openTopo;
 const map = L.map('map', {
     center: [52.068811, 19.479699],
     zoom: 6.5,
-    layers: [openTopo]
+    layers: [openTopo],
+    zoomControl: false
 });
+
+L.control.zoom({ position: 'topright' }).addTo(map);
 
 // layer groups
 const etykietyTa = L.layerGroup();
@@ -236,12 +239,47 @@ function renderDataForHour(hourStr) {
     });
 
     const overlayMaps = {
-        "<div class='leaflet-menu-section-title' style='font-weight: 800; font-size: 14px; color: #1a252f; margin: 0 0 6px 0;'>Parametry:</div>": L.layerGroup(),
         "Nazwa stacji (Station_name)": etykietyStationName, "Wysokość (Elevation)": etykietyElevation, "Temperatura aktualna (Ta)": etykietyTa, "Temperatura minimalna (Tmin)": etykietyTmin, "Temperatura maksymalna (Tmax)": etykietyTmax, "Temperatura min. godzinowa (Tmin_hour)": etykietyTminHour, "Temperatura max. godzinowa (Tmax_hour)": etykietyTmaxHour, "Temperatura przy gruncie (Tg)": etykietyTg, "Suma opadów (Precip_24h)": etykietyOpady24h, "Opad wybranej godziny (Precip_hour)": etykietyOpady10min, "Średni wiatr (Wind_avg)": etykietyWindAvg, "Porywy wiatru (Wind_max)": etykietyWindMax
     };
 
     if (!layersControl) {
         layersControl = L.control.layers(null, overlayMaps, { position: 'topleft', collapsed: false }).addTo(map);
+        const root = layersControl.getContainer();
+        if (root && !root.dataset.compactReady) {
+            root.dataset.compactReady = 'true';
+            root.classList.add('compact-panel');
+
+            const header = document.createElement('div');
+            header.className = 'panel-header';
+
+            const toggle = document.createElement('button');
+            toggle.type = 'button';
+            toggle.className = 'panel-toggle-btn';
+            toggle.title = 'Zwiń/rozwiń okno parametrów';
+            toggle.setAttribute('aria-label', 'Zwiń/rozwiń okno parametrów');
+            toggle.textContent = '▾';
+
+            const title = document.createElement('div');
+            title.className = 'panel-title';
+            title.textContent = 'Parametry:';
+
+            header.appendChild(toggle);
+            header.appendChild(title);
+
+            const list = root.querySelector('.leaflet-control-layers-list');
+            if (list) {
+                root.insertBefore(header, list);
+                list.classList.add('panel-body');
+            } else {
+                root.insertBefore(header, root.firstChild);
+            }
+
+            toggle.addEventListener('click', () => {
+                const collapsed = root.classList.toggle('collapsed');
+                toggle.textContent = collapsed ? '▸' : '▾';
+            });
+        }
+
         setTimeout(() => {
             document.querySelectorAll('.leaflet-control-layers-overlays label').forEach(label => {
                 if (label.innerHTML.includes('leaflet-menu-section-title')) { const cb = label.querySelector('input'); if (cb) cb.remove(); }
@@ -266,31 +304,35 @@ function loadDataForDate(dateStr) {
 
 const baseMapControl = L.control({ position: 'topleft' });
 baseMapControl.onAdd = function() {
-    const div = L.DomUtil.create('div', 'leaflet-control-layers leaflet-control-layers-expanded custom-basemap-control');
-    
-    div.style.padding = '12px';
-    div.style.background = '#ffffff';
-    div.style.borderRadius = '6px';
-    div.style.boxShadow = '0 2px 6px rgba(0,0,0,0.25)';
-    div.style.minWidth = '200px';
-    div.style.marginTop = '10px';
-    
+    const div = L.DomUtil.create('div', 'leaflet-control-layers leaflet-control-layers-expanded custom-basemap-control compact-panel');
+
     div.innerHTML = `
-        <div style="font-weight: 800; font-size: 14px; color: #1a252f; margin-bottom: 8px; border-bottom: 1px solid #eee; padding-bottom: 4px;">Podkład mapy:</div>
-        <div style="margin-bottom: 8px; font-size: 12px; line-height: 1.4;">
-            <label style="cursor:pointer; display:block;"><input type="radio" name="customBaseLayer" value="osm" style="vertical-align:middle; margin-right:5px;">Standardowy (OSM)</label>
-            <label style="cursor:pointer; display:block;"><input type="radio" name="customBaseLayer" value="esri" style="vertical-align:middle; margin-right:5px;">Satelita (Esri)</label>
-            <label style="cursor:pointer; display:block;"><input type="radio" name="customBaseLayer" value="carto" style="vertical-align:middle; margin-right:5px;">Ciemny (CartoDB)</label>
-            <label style="cursor:pointer; display:block;"><input type="radio" name="customBaseLayer" value="topo" checked style="vertical-align:middle; margin-right:5px;">Topograficzny</label>
+        <div class="panel-header">
+            <button type="button" class="panel-toggle-btn" aria-label="Zwiń/rozwiń okno podkładu" title="Zwiń/rozwiń okno podkładu">▾</button>
+            <div class="panel-title">Podkład mapy:</div>
         </div>
-        <div style="border-top: 1px solid #eee; padding-top: 8px; margin-top: 4px;">
-            <label for="opacitySlider" style="display:block; font-size: 14px; font-weight: 800; color: #1a252f; margin-bottom: 4px;">
+        <div class="basemap-body">
+            <label><input type="radio" name="customBaseLayer" value="osm">Standardowy (OSM)</label>
+            <label><input type="radio" name="customBaseLayer" value="esri">Satelita (Esri)</label>
+            <label><input type="radio" name="customBaseLayer" value="carto">Ciemny (CartoDB)</label>
+            <label><input type="radio" name="customBaseLayer" value="topo" checked>Topograficzny</label>
+        </div>
+        <div class="basemap-footer">
+            <label for="opacitySlider">
                 Przezroczystość: <span id="opacityVal" style="font-weight:bold; color:#2ecc71; margin-left:2px;">90%</span>
             </label>
             <input type="range" id="opacitySlider" min="0" max="1" step="0.1" value="0.9" style="width: 100%; display: block; margin: 0; cursor: pointer;">
         </div>
     `;
-    
+
+    const toggle = div.querySelector('.panel-toggle-btn');
+    if (toggle) {
+        toggle.addEventListener('click', () => {
+            const collapsed = div.classList.toggle('collapsed');
+            toggle.textContent = collapsed ? '▸' : '▾';
+        });
+    }
+
     L.DomEvent.disableClickPropagation(div); 
     L.DomEvent.disableScrollPropagation(div);
     

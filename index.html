@@ -84,6 +84,134 @@
             padding: 2px 0;
         }
 
+        .compact-panel {
+            width: 220px;
+            max-width: 220px;
+            box-sizing: border-box;
+            background: rgba(255,255,255,0.96);
+            border-radius: 6px;
+            box-shadow: 0 2px 6px rgba(0,0,0,0.2);
+            padding: 8px 10px;
+            overflow: visible;
+            transition: width 0.2s ease, max-width 0.2s ease, padding 0.2s ease;
+        }
+        .compact-panel .panel-header {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            margin-bottom: 4px;
+            padding-bottom: 3px;
+            border-bottom: 1px solid #eee;
+        }
+        .compact-panel .panel-toggle-btn {
+            order: 0;
+            flex-shrink: 0;
+            width: 24px;
+            height: 24px;
+            border: 1px solid #d8d8d8;
+            border-radius: 4px;
+            background: #f5f5f5;
+            color: #333;
+            font-size: 12px;
+            line-height: 1;
+            cursor: pointer;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .compact-panel .panel-title {
+            order: 1;
+            font-size: 14px;
+            font-weight: 700;
+            letter-spacing: -0.02em;
+            color: #1a252f;
+            line-height: 1.2;
+            white-space: nowrap;
+        }
+        .compact-panel.collapsed {
+            width: 38px !important;
+            max-width: 38px !important;
+            padding: 8px 7px !important;
+        }
+        .compact-panel.collapsed .panel-title,
+        .compact-panel.collapsed .leaflet-control-layers-list,
+        .compact-panel.collapsed .basemap-body,
+        .compact-panel.collapsed .basemap-footer {
+            display: none !important;
+        }
+        .compact-panel.collapsed .panel-header {
+            margin-bottom: 0;
+            padding-bottom: 0;
+            border-bottom: none;
+            justify-content: center;
+        }
+        .leaflet-control-layers {
+            width: 220px;
+            max-width: 220px;
+            font-size: 11px;
+            box-sizing: border-box;
+            overflow: visible;
+        }
+        .leaflet-control-layers .leaflet-control-layers-list {
+            overflow: visible;
+            margin-top: 0;
+        }
+        .leaflet-control-layers label {
+            display: flex;
+            align-items: center;
+            gap: 5px;
+            white-space: normal;
+            word-break: break-word;
+            line-height: 1.3;
+            margin: 1px 0;
+            font-size: 11px;
+        }
+        .leaflet-control-layers input[type="checkbox"] {
+            margin: 0;
+        }
+        .custom-basemap-control {
+            width: 220px;
+            max-width: 220px;
+            font-size: 12px;
+            box-sizing: border-box;
+        }
+        .custom-basemap-control .basemap-body,
+        .custom-basemap-control .basemap-footer {
+            white-space: normal;
+        }
+        .custom-basemap-control .basemap-body {
+            margin-bottom: 6px;
+            padding-bottom: 6px;
+            border-bottom: 1px solid rgba(26, 37, 47, 0.06);
+            display: flex;
+            flex-direction: column;
+            gap: 1px;
+        }
+        .custom-basemap-control .basemap-footer label {
+            display: block;
+            white-space: normal;
+            word-break: break-word;
+            line-height: 1.2;
+            font-size: 12px;
+            font-weight: 700;
+            color: #1a252f;
+            margin: 3px 0 5px 0;
+        }
+        .custom-basemap-control label {
+            display: flex;
+            align-items: center;
+            gap: 5px;
+            white-space: normal;
+            word-break: break-word;
+            line-height: 1.18;
+            margin: 0;
+            font-size: 11.5px;
+        }
+        .custom-basemap-control input[type="radio"] {
+            margin: 0;
+            transform: scale(0.92);
+        }
+
         /* SUWAK PRZEZROCZYSTOŚCI */
         .slider-opacity-container {
             background: rgba(255, 255, 255, 0.9);
@@ -103,6 +231,48 @@
             cursor: pointer;
             width: 100%;
             margin: 0;
+        }
+
+        .custom-basemap-control input[type="range"] {
+            -webkit-appearance: none;
+            appearance: none;
+            width: 100%;
+            height: 2px;
+            background: rgba(0, 0, 0, 0.12);
+            border-radius: 999px;
+            outline: none;
+            margin: 0;
+            cursor: pointer;
+        }
+        .custom-basemap-control input[type="range"]::-webkit-slider-runnable-track {
+            height: 2px;
+            background: rgba(0, 0, 0, 0.12);
+            border-radius: 999px;
+        }
+        .custom-basemap-control input[type="range"]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            appearance: none;
+            width: 11px;
+            height: 11px;
+            border-radius: 50%;
+            background: rgba(46, 204, 113, 0.9);
+            border: 1px solid rgba(255,255,255,0.9);
+            box-shadow: none;
+            margin-top: -4.5px;
+        }
+        .custom-basemap-control input[type="range"]::-moz-range-track {
+            height: 2px;
+            background: rgba(0, 0, 0, 0.12);
+            border-radius: 999px;
+            border: none;
+        }
+        .custom-basemap-control input[type="range"]::-moz-range-thumb {
+            width: 11px;
+            height: 11px;
+            border-radius: 50%;
+            background: rgba(46, 204, 113, 0.9);
+            border: 1px solid rgba(255,255,255,0.9);
+            box-shadow: none;
         }
 
         /* PIONOWA LEGENDA */
