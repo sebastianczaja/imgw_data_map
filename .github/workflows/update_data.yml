@@ -2,9 +2,8 @@ name: Hourly IMGW Data Update
 
 on:
   schedule:
-    # Odpala si� 15 ORAZ 45 minut po ka�dej pe�nej godzinie (wi�ksza szansa na punktualno��)
-    - cron: '15,45 * * * *'  
-  workflow_dispatch:     # Pozwala te� uruchomi� skrypt r�cznie jednym klikni�ciem
+    - cron: '*/15 * * * *'  
+  workflow_dispatch:     # Pozwala uruchomić skrypt ręcznie jednym kliknięciem
 
 concurrency:
   group: imgw-data-update
