@@ -21,10 +21,19 @@ const openTopo = L.tileLayer('https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png',
 let activeBaseLayer = openTopo;
 
 const map = L.map('map', {
-    center: [52.068811, 19.479699],
-    zoom: 6.5,
+    center: [52.218811, 19.479699],
+    zoom: 6.7,
+    zoomSnap: 0.1,
     layers: [openTopo],
     zoomControl: false
+});
+
+map.setView([52.218811, 19.479699], 6.7);
+map.invalidateSize();
+map.whenReady(() => {
+    setTimeout(() => {
+        map.panBy([0, 36], { animate: false });
+    }, 60);
 });
 
 L.control.zoom({ position: 'topright' }).addTo(map);
@@ -369,10 +378,18 @@ baseMapControl.onAdd = function() {
             <label><input type="radio" name="customBaseLayer" value="topo" checked>Topograficzny</label>
         </div>
         <div class="basemap-footer">
-            <label for="opacitySlider">
-                Przezroczystość: <span id="opacityVal" style="font-weight:bold; color:#2ecc71; margin-left:2px;">90%</span>
-            </label>
-            <input type="range" id="opacitySlider" min="0" max="1" step="0.1" value="0.9" style="width: 100%; display: block; margin: 0; cursor: pointer;">
+            <div class="basemap-range-group">
+                <label for="opacitySlider">
+                    Przezroczystość: <span id="opacityVal" style="font-weight:700; color: var(--slider-accent-strong, #4d4f52); margin-left:2px;">90%</span>
+                </label>
+                <input type="range" id="opacitySlider" min="0" max="1" step="0.1" value="0.9" style="width: 100%; display: block; margin: 0; cursor: pointer;">
+            </div>
+            <div class="basemap-range-group basemap-range-group--zoom">
+                <label for="zoomSlider">
+                    Powiększenie mapy: <span id="zoomVal" style="font-weight:700; color: var(--slider-accent-strong, #4d4f52); margin-left:2px;">6.7x</span>
+                </label>
+                <input type="range" id="zoomSlider" min="4" max="18" step="0.1" value="6.7" style="width: 100%; display: block; margin: 0; cursor: pointer;">
+            </div>
         </div>
     `;
 
@@ -391,8 +408,19 @@ baseMapControl.onAdd = function() {
         const radios = div.querySelectorAll('input[name="customBaseLayer"]');
         const slider = div.querySelector('#opacitySlider');
         const valLabel = div.querySelector('#opacityVal');
+        const zoomSlider = div.querySelector('#zoomSlider');
+        const zoomValLabel = div.querySelector('#zoomVal');
         
         activeBaseLayer.setOpacity(0.9);
+
+        const syncZoomLabel = () => {
+            if (zoomSlider) {
+                zoomSlider.value = String(map.getZoom());
+            }
+            if (zoomValLabel) {
+                zoomValLabel.textContent = `${Number(map.getZoom()).toFixed(1)}x`;
+            }
+        };
         
         function updateLayer(selectedVal) {
             map.removeLayer(activeBaseLayer);
@@ -424,6 +452,19 @@ baseMapControl.onAdd = function() {
                 }
             });
         }
+
+        if (zoomSlider) {
+            zoomSlider.addEventListener('input', function(e) {
+                const nextZoom = parseFloat(e.target.value);
+                map.setZoom(nextZoom);
+                if (zoomValLabel) {
+                    zoomValLabel.textContent = `${nextZoom.toFixed(1)}x`;
+                }
+            });
+        }
+
+        syncZoomLabel();
+        map.on('zoomend', syncZoomLabel);
     }, 100);
     
     return div;
@@ -442,7 +483,7 @@ legendControl.onAdd = function() {
             <button type="button" class="panel-toggle-btn" aria-label="Zwiń/rozwiń okno legendy" title="Zwiń/rozwiń okno legendy">▾</button>
             <div class="panel-title">Legenda:</div>
         </div>
-        <div class="legend-subtitle" style="font-size:11px; color:#374151; font-weight:700; margin: 5px 0 10px 0;">Temperatura:</div>
+        <div class="legend-subtitle" style="font-size:10px; color:#374151; font-weight:700; margin: 1px 0 3px 0;">Temperatura:</div>
         <div class="legend-body" style="display:flex; align-items:stretch; height: 242px;">
             <div class="legend-bar" style="
                 width: 7px;
@@ -463,6 +504,11 @@ legendControl.onAdd = function() {
         toggle.addEventListener('click', () => {
             const collapsed = div.classList.toggle('collapsed');
             toggle.textContent = collapsed ? '▸' : '▾';
+            const el = document.querySelector('.map-legend-container');
+            if (el) {
+                el.dataset.manualHidden = collapsed ? 'true' : 'false';
+                updateLegendVisibility();
+            }
         });
     }
 
@@ -474,9 +520,59 @@ legendControl.onAdd = function() {
 legendControl.addTo(map);
 
 function updateLegendVisibility() {
-    const isVisible = [etykietyTa, etykietyTmin, etykietyTmax, etykietyTminHour, etykietyTmaxHour, etykietyTg].some(l => map.hasLayer(l));
     const el = document.querySelector('.map-legend-container');
-    if (el) el.style.display = isVisible ? 'block' : 'none';
+    if (!el) return;
+
+    if (el.dataset.manualHidden === 'true') {
+        el.style.display = 'none';
+        return;
+    }
+
+    el.style.display = 'block';
+}
+
+function applyTheme(theme) {
+    const isDark = theme === 'dark';
+    document.body.classList.toggle('dark-theme', isDark);
+
+    const lightBtn = document.getElementById('themeLightBtn');
+    const darkBtn = document.getElementById('themeDarkBtn');
+
+    [lightBtn, darkBtn].forEach(btn => {
+        if (!btn) return;
+        const isActive = btn.dataset.theme === theme;
+        btn.classList.toggle('active', isActive);
+        btn.setAttribute('aria-pressed', String(isActive));
+    });
+
+    try {
+        localStorage.setItem('imgw_theme', theme);
+    } catch (e) {
+        console.warn('Nie udało się zapisać motywu:', e);
+    }
+}
+
+function initThemeToggle() {
+    const savedTheme = (() => {
+        try {
+            return localStorage.getItem('imgw_theme') || 'light';
+        } catch (e) {
+            return 'light';
+        }
+    })();
+
+    const lightBtn = document.getElementById('themeLightBtn');
+    const darkBtn = document.getElementById('themeDarkBtn');
+
+    if (lightBtn) {
+        lightBtn.addEventListener('click', () => applyTheme('light'));
+    }
+
+    if (darkBtn) {
+        darkBtn.addEventListener('click', () => applyTheme('dark'));
+    }
+
+    applyTheme(savedTheme === 'dark' ? 'dark' : 'light');
 }
 
 function initTimelineUI() {
@@ -484,6 +580,7 @@ function initTimelineUI() {
     const hourSlider = document.getElementById('hourSlider');
     const ticksContainer = document.getElementById('ticksContainer');
     const currentTimeLabel = document.getElementById('currentTimeLabel');
+    initThemeToggle();
 
     if (ticksContainer) {
         ticksContainer.innerHTML = '';

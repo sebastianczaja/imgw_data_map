@@ -8,12 +8,58 @@
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="" />
     
     <style>
+        :root {
+            --page-bg: #ffffff;
+            --panel-bg: rgba(255, 255, 255, 0.96);
+            --panel-bg-strong: rgba(255, 255, 255, 0.98);
+            --panel-border: rgba(26, 37, 47, 0.08);
+            --text-main: #1a252f;
+            --text-soft: #374151;
+            --text-muted: #7f8c8d;
+            --timeline-bg: rgba(255, 255, 255, 0.96);
+            --timeline-line: #dfe7f1;
+            --input-bg: #ffffff;
+            --input-border: #c7d5eb;
+            --shadow: rgba(0, 0, 0, 0.15);
+            --slider-accent: #7d8086;
+            --slider-accent-strong: #4d4f52;
+            --slider-track: rgba(125, 128, 134, 0.18);
+        }
+
+        body.dark-theme {
+            --page-bg: #0f172a;
+            --panel-bg: rgba(15, 23, 42, 0.88);
+            --panel-bg-strong: rgba(15, 23, 42, 0.96);
+            --panel-border: rgba(148, 163, 184, 0.2);
+            --text-main: #e2e8f0;
+            --text-soft: #cbd5e1;
+            --text-muted: #94a3b8;
+            --timeline-bg: rgba(15, 23, 42, 0.9);
+            --timeline-line: rgba(180, 180, 186, 0.35);
+            --input-bg: #111827;
+            --input-border: #6a717d;
+            --shadow: rgba(2, 6, 23, 0.45);
+            --header-border: rgba(180, 180, 186, 0.2);
+            --button-bg: rgba(30, 41, 59, 0.9);
+            --button-text: #e2e8f0;
+            --legend-subtitle: #cbd5e1;
+            --legend-value: #dbeafe;
+            --label-soft: #cbd5e1;
+            --label-muted: #94a3b8;
+            --section-border: rgba(180, 180, 186, 0.2);
+            --slider-accent: #b7bbc1;
+            --slider-accent-strong: #e7e9ec;
+            --slider-track: rgba(183, 187, 193, 0.2);
+        }
+
         html, body {
             margin: 0;
             padding: 0;
             height: 100%;
             width: 100%;
             font-family: Arial, sans-serif;
+            background: var(--page-bg);
+            color: var(--text-main);
         }
         #map {
             height: 100%;
@@ -74,12 +120,12 @@
         }
 
         .leaflet-control-layers-separator {
-            border-top: 1px solid #ddd;
+            border-top: 1px solid var(--header-border);
             margin: 5px -10px 5px -10px;
         }
         .leaflet-menu-section-title {
             font-size: 11px;
-            color: #555;
+            color: var(--label-soft);
             font-weight: bold;
             padding: 2px 0;
         }
@@ -88,12 +134,18 @@
             width: 220px;
             max-width: 220px;
             box-sizing: border-box;
-            background: rgba(255,255,255,0.96);
+            background: var(--panel-bg);
             border-radius: 6px;
-            box-shadow: 0 2px 6px rgba(0,0,0,0.2);
+            box-shadow: 0 2px 6px var(--shadow);
             padding: 8px 10px;
             overflow: visible;
             transition: width 0.2s ease, max-width 0.2s ease, padding 0.2s ease;
+            color: var(--text-main);
+        }
+        .compact-panel .panel-header,
+        .compact-panel .panel-body {
+            padding-left: 4px !important;
+            box-sizing: border-box;
         }
         .compact-panel .panel-header {
             display: flex;
@@ -101,17 +153,17 @@
             gap: 6px;
             margin-bottom: 4px;
             padding-bottom: 3px;
-            border-bottom: 1px solid #eee;
+            border-bottom: 1px solid var(--header-border);
         }
         .compact-panel .panel-toggle-btn {
             order: 0;
             flex-shrink: 0;
             width: 24px;
             height: 24px;
-            border: 1px solid #d8d8d8;
+            border: 1px solid var(--input-border);
             border-radius: 4px;
-            background: #f5f5f5;
-            color: #333;
+            background: var(--button-bg);
+            color: var(--button-text);
             font-size: 12px;
             line-height: 1;
             cursor: pointer;
@@ -121,25 +173,32 @@
         }
         .compact-panel .panel-title {
             order: 1;
-            font-size: 13px;
+            font-size: 11px;
             font-weight: 700;
-            letter-spacing: -0.02em;
-            color: #1a252f;
+            letter-spacing: -0.01em;
+            color: var(--text-main);
             line-height: 1.2;
             white-space: nowrap;
+            min-width: 0;
+            max-width: 100%;
+            padding-right: 2px;
         }
         .map-legend-container {
             width: 148px;
             max-width: 148px;
             min-width: 148px;
             box-sizing: border-box;
-            background: rgba(255,255,255,0.96);
+            background: var(--panel-bg);
             border-radius: 6px;
-            box-shadow: 0 2px 6px rgba(0,0,0,0.2);
+            box-shadow: 0 2px 6px var(--shadow);
             padding: 8px 10px;
             margin-top: 0;
             margin-bottom: 0;
             margin-left: 0;
+            color: var(--text-main);
+        }
+        .map-legend-container .legend-subtitle {
+            color: var(--legend-subtitle);
         }
         .map-legend-container .panel-header {
             display: flex;
@@ -160,7 +219,9 @@
         .map-legend-container .panel-title {
             order: 1;
             margin-right: 0;
-            font-size: 13px;
+            font-size: 11px;
+            letter-spacing: -0.01em;
+            padding-right: 2px;
         }
         .compact-panel.collapsed {
             width: auto !important;
@@ -211,36 +272,55 @@
             padding: 0 !important;
             border-bottom: none !important;
         }
+        .leaflet-top.leaflet-left {
+            left: 0 !important;
+            margin-left: 0 !important;
+            top: 0 !important;
+            display: flex !important;
+            flex-direction: column !important;
+            align-items: flex-start !important;
+            gap: 2px !important;
+        }
+        .leaflet-top.leaflet-left .leaflet-control {
+            margin: 0 !important;
+        }
+        .leaflet-top.leaflet-left .leaflet-control + .leaflet-control {
+            margin-top: 2px !important;
+        }
         .leaflet-bottom.leaflet-left {
+            left: 0 !important;
+            margin-left: 0 !important;
             top: auto !important;
             bottom: 0 !important;
-            left: 0 !important;
-            right: auto !important;
-            display: block !important;
-            padding-top: 0 !important;
         }
-        .leaflet-bottom.leaflet-left .leaflet-control {
-            margin: 0 0 10px 10px !important;
-            display: block !important;
-            float: none !important;
-            clear: both !important;
+        .leaflet-left .leaflet-control,
+        .custom-basemap-control,
+        .map-legend-container {
+            margin-left: 0 !important;
         }
         .leaflet-bottom.leaflet-left .map-legend-container {
-            margin-top: 0 !important;
-            margin-bottom: 10px !important;
-            position: relative !important;
-            top: 0 !important;
+            margin-bottom: 0 !important;
         }
         .leaflet-control-layers {
-            width: 220px;
-            max-width: 220px;
+            width: 250px;
+            max-width: 250px;
             font-size: 11px;
             box-sizing: border-box;
             overflow: visible;
+            margin-left: 0 !important;
+            padding: 8px 8px 8px 4px !important;
+            border-radius: 6px;
+            box-shadow: 0 2px 6px var(--shadow);
+            background: var(--panel-bg) !important;
         }
         .leaflet-control-layers .leaflet-control-layers-list {
             overflow: visible;
             margin-top: 0;
+            padding-left: 4px !important;
+        }
+        .leaflet-control-layers-overlays {
+            padding-left: 0 !important;
+            margin-left: 0 !important;
         }
         .leaflet-control-layers label {
             display: flex;
@@ -250,6 +330,7 @@
             word-break: break-word;
             line-height: 1.3;
             margin: 1px 0;
+            padding-left: 0;
             font-size: 11px;
         }
         .leaflet-control-layers input[type="checkbox"] {
@@ -260,6 +341,19 @@
             max-width: 220px;
             font-size: 12px;
             box-sizing: border-box;
+            background: var(--panel-bg);
+            color: var(--text-main);
+            padding-left: 0 !important;
+        }
+        body.dark-theme .custom-basemap-control {
+            background: var(--panel-bg) !important;
+            color: var(--text-main) !important;
+        }
+        .custom-basemap-control .panel-header,
+        .custom-basemap-control .basemap-body,
+        .custom-basemap-control .basemap-footer {
+            padding-left: 8px !important;
+            box-sizing: border-box;
         }
         .custom-basemap-control .basemap-body,
         .custom-basemap-control .basemap-footer {
@@ -268,34 +362,46 @@
         .custom-basemap-control .basemap-body {
             margin-bottom: 6px;
             padding-bottom: 6px;
-            border-bottom: 1px solid rgba(26, 37, 47, 0.06);
+            border-bottom: 1px solid var(--header-border);
             display: flex;
             flex-direction: column;
             gap: 1px;
+        }
+        .custom-basemap-control .basemap-footer {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+        .custom-basemap-control .basemap-range-group {
+            display: flex;
+            flex-direction: column;
+            gap: 2px;
         }
         .custom-basemap-control .basemap-footer label {
             display: block;
             white-space: normal;
             word-break: break-word;
             line-height: 1.2;
-            font-size: 12px;
+            font-size: 10.5px;
             font-weight: 700;
-            color: #1a252f;
+            color: var(--text-main);
             margin: 3px 0 5px 0;
         }
         .custom-basemap-control label {
             display: flex;
             align-items: center;
-            gap: 5px;
+            gap: 4px;
             white-space: normal;
             word-break: break-word;
-            line-height: 1.18;
+            line-height: 1.25;
             margin: 0;
-            font-size: 11.5px;
+            font-size: 11px;
+            color: var(--text-main);
         }
         .custom-basemap-control input[type="radio"] {
             margin: 0;
-            transform: scale(0.92);
+            transform: scale(0.9);
+            flex-shrink: 0;
         }
 
         /* SUWAK PRZEZROCZYSTOŚCI */
@@ -324,7 +430,7 @@
             appearance: none;
             width: 100%;
             height: 2px;
-            background: rgba(0, 0, 0, 0.12);
+            background: var(--slider-track);
             border-radius: 999px;
             outline: none;
             margin: 0;
@@ -332,7 +438,7 @@
         }
         .custom-basemap-control input[type="range"]::-webkit-slider-runnable-track {
             height: 2px;
-            background: rgba(0, 0, 0, 0.12);
+            background: var(--slider-track);
             border-radius: 999px;
         }
         .custom-basemap-control input[type="range"]::-webkit-slider-thumb {
@@ -341,14 +447,14 @@
             width: 11px;
             height: 11px;
             border-radius: 50%;
-            background: rgba(46, 204, 113, 0.9);
-            border: 1px solid rgba(255,255,255,0.9);
+            background: var(--slider-accent);
+            border: 1px solid #fff;
             box-shadow: none;
             margin-top: -4.5px;
         }
         .custom-basemap-control input[type="range"]::-moz-range-track {
             height: 2px;
-            background: rgba(0, 0, 0, 0.12);
+            background: var(--slider-track);
             border-radius: 999px;
             border: none;
         }
@@ -356,28 +462,38 @@
             width: 11px;
             height: 11px;
             border-radius: 50%;
-            background: rgba(46, 204, 113, 0.9);
-            border: 1px solid rgba(255,255,255,0.9);
+            background: var(--slider-accent);
+            border: 1px solid #fff;
             box-shadow: none;
         }
 
         /* PIONOWA LEGENDA */
         .map-legend-container {
-            background: rgba(255, 255, 255, 0.92);
-            padding: 10px 14px;
-            border-radius: 5px;
-            box-shadow: 0 1px 6px rgba(0,0,0,0.25);
-            font-family: Arial, sans-serif;
-            color: #2c3e50;
-            min-width: 90px;
+            width: 148px;
+            max-width: 148px;
+            min-width: 148px;
+            box-sizing: border-box;
+            background: var(--panel-bg);
+            border-radius: 6px;
+            box-shadow: 0 2px 6px var(--shadow);
+            padding: 8px 10px;
+            margin-top: 0;
+            margin-bottom: 0;
+            margin-left: 0;
+            color: var(--text-main);
+        }
+        body.dark-theme .map-legend-container {
+            background: var(--panel-bg) !important;
+            color: var(--text-main) !important;
         }
         .legend-title {
             font-size: 11px;
             font-weight: bold;
             text-align: center;
             margin-bottom: 8px;
-            border-bottom: 1px solid #ccc;
+            border-bottom: 1px solid var(--header-border);
             padding-bottom: 4px;
+            color: var(--text-main);
         }
         .legend-body {
             display: flex;
@@ -405,85 +521,202 @@
         }
         .legend-tick {
             font-size: 10px;
-            color: #7f8c8d;
+            color: var(--legend-value);
             margin-right: 2px;
         }
         .legend-value {
             font-size: 10px;
             font-weight: bold;
+            color: var(--legend-value);
         }
         /* MINIMALISTYCZNA OŚ CZASU - SUBTELNA I SZEROKA */
         #timeline-container {
             position: absolute;
-            bottom: 25px;
+            bottom: 0;
             left: 50%;
             transform: translateX(-50%);
             z-index: 1000;
-            background: rgba(255, 255, 255, 0.96);
-            padding: 12px 20px;
-            border-radius: 8px;
-            box-shadow: 0 2px 10px rgba(0,0,0,0.15);
-            width: 80%;
-            max-width: 900px;
+            background: var(--timeline-bg);
+            padding: 5px 10px 4px;
+            border-radius: 7px 7px 0 0;
+            box-shadow: 0 -2px 8px var(--shadow);
+            width: min(70%, 760px);
+            max-width: 760px;
             display: flex;
             flex-direction: column;
-            gap: 8px;
+            gap: 0px;
             font-family: Arial, sans-serif;
             pointer-events: auto;
+            color: var(--text-main);
         }
         .timeline-header {
             display: flex;
             justify-content: space-between;
             align-items: center;
-            font-size: 13px;
-            color: #333;
+            gap: 12px;
+            font-size: 11px;
+            color: var(--text-main);
             font-weight: bold;
+            line-height: 1.2;
         }
         .timeline-controls {
             display: flex;
             align-items: center;
-            gap: 15px;
+            gap: 10px;
+            flex-wrap: wrap;
+        }
+        #currentTimeLabel {
+            font-size: 11px;
+            line-height: 1.2;
+            display: flex;
+            align-items: center;
+            gap: 3px;
+            white-space: nowrap;
+            font-weight: 700;
+        }
+        #currentTimeLabel span {
+            font-size: 11px;
+            line-height: 1.2;
+            display: inline-block;
         }
         .timeline-controls input[type="date"] {
-            border: 1px solid #ccc;
-            padding: 4px 8px;
+            border: 1px solid var(--input-border);
+            background: var(--input-bg);
+            color: var(--text-main);
+            padding: 0 3px;
             border-radius: 4px;
             font-family: Arial, sans-serif;
-            font-size: 12px;
+            font-size: 10.5px;
             outline: none;
+            height: 20px;
+            min-width: 88px;
+            width: 88px;
+            box-sizing: border-box;
+            text-align: center;
+            display: block;
+            cursor: pointer;
+        }
+        .timeline-controls input[type="date"]::-webkit-calendar-picker-indicator {
+            filter: invert(0.8) brightness(1.2);
+            opacity: 0.9;
+            cursor: pointer;
+        }
+        .timeline-controls input[type="date"]::-webkit-clear-button {
+            display: none;
+        }
+        .theme-picker {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            flex-wrap: wrap;
+            padding-left: 8px;
+            border-left: 1px solid var(--input-border);
+            margin-left: 2px;
+        }
+        .theme-picker-label {
+            font-size: 11px;
+            color: var(--text-main);
+            white-space: nowrap;
+            font-weight: 700;
+        }
+        .timeline-controls > span:first-child {
+            font-size: 11px;
+            color: var(--text-main);
+            font-weight: 700;
+        }
+        .theme-btn {
+            border: 1px solid var(--input-border);
+            background: transparent;
+            color: var(--text-main);
+            border-radius: 999px;
+            padding: 2px 7px;
+            font-size: 9.5px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.18s ease;
+            line-height: 1.15;
+            min-width: 48px;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 4px;
+        }
+        .theme-btn .theme-icon {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            width: 11px;
+            height: 11px;
+            line-height: 1;
+            font-size: 10px;
+            transition: all 0.18s ease;
+        }
+        .theme-btn.active {
+            background: rgba(92, 96, 102, 0.18);
+            border-color: rgba(60, 64, 70, 0.7);
+            box-shadow: inset 0 0 0 1px rgba(255,255,255,0.14), 0 0 0 1px rgba(14, 16, 18, 0.08);
+            color: var(--text-main);
+        }
+        body.dark-theme .theme-btn.active {
+            background: rgba(160, 165, 173, 0.18);
+            border-color: rgba(218, 221, 227, 0.65);
+            box-shadow: inset 0 0 0 1px rgba(255,255,255,0.18), 0 0 0 1px rgba(255,255,255,0.06);
+        }
+        .theme-btn[data-theme="light"].active .theme-icon {
+            color: var(--text-main);
+            text-shadow: 0 0 0 1px rgba(35, 36, 38, 0.45);
+        }
+        .theme-btn[data-theme="dark"].active .theme-icon {
+            color: var(--text-main);
+            text-shadow: 0 0 0 1px rgba(16, 18, 24, 0.65);
         }
         .slider-wrapper {
             display: flex;
             flex-direction: column;
             position: relative;
-            padding-bottom: 5px;
+            padding-bottom: 3px;
         }
         .timeline-slider {
             -webkit-appearance: none;
             appearance: none;
             width: 100%;
-            height: 5px;
-            border-radius: 3px;
-            background: #e0e0e0;
+            height: 4px;
+            border-radius: 999px;
+            background: linear-gradient(to right, rgba(125, 128, 134, 0.18), var(--timeline-line));
             outline: none;
-            margin: 10px 0;
+            margin: 6px 0 4px;
             cursor: pointer;
         }
         .timeline-slider::-webkit-slider-thumb {
             -webkit-appearance: none;
             appearance: none;
-            width: 15px;
-            height: 15px;
+            width: 13px;
+            height: 13px;
             border-radius: 50%;
-            background: #2ecc71;
+            background: var(--slider-accent, #7d8086);
             cursor: pointer;
             border: 2px solid #fff;
-            box-shadow: 0 1px 3px rgba(0,0,0,0.3);
+            box-shadow: 0 1px 3px rgba(0,0,0,0.25);
             transition: background 0.15s ease;
         }
-        .timeline-slider::-moz-range-thumb { width:15px; height:15px; border-radius:50%; background:#2ecc71; border:2px solid #fff; }
-        .timeline-ticks { display:flex; justify-content:space-between; padding:0 2px; }
-        .timeline-tick-label { font-size:10px; color:#7f8c8d; position:relative; text-align:center; user-select:none; }
+        .timeline-slider::-moz-range-thumb { width:13px; height:13px; border-radius:50%; background:var(--slider-accent, #7d8086); border:2px solid #fff; }
+        .timeline-ticks { display:flex; justify-content:space-between; padding:0 2px; margin-top: 2px; }
+        .timeline-tick-label { font-size:9px; color: var(--text-muted); position:relative; text-align:center; user-select:none; line-height:1.1; transform: translateY(2px); }
+        body.dark-theme #opacityVal {
+            color: var(--text-main) !important;
+        }
+        body.dark-theme .map-legend-container .legend-value,
+        body.dark-theme .map-legend-container .legend-tick,
+        body.dark-theme .map-legend-container .legend-subtitle {
+            color: var(--legend-value) !important;
+        }
+        #opacityVal,
+        #currentTimeLabel span {
+            color: var(--slider-accent-strong, #4d4f52) !important;
+            font-weight: 700 !important;
+            font-size: 10px;
+            font-family: Arial, sans-serif;
+        }
     </style>
 </head>
 <body>
@@ -493,10 +726,15 @@
     <div id="timeline-container">
         <div class="timeline-header">
             <div class="timeline-controls">
-                <span style="color:#2c3e50;">Wybór daty:</span>
-                    <input type="date" id="datePicker">
+                <span style="color: var(--text-main); font-weight: 700;">Wybór daty:</span>
+                <input type="date" id="datePicker">
+                <div class="theme-picker" aria-label="Wybór motywu">
+                    <span class="theme-picker-label">Motyw:</span>
+                    <button id="themeLightBtn" class="theme-btn" type="button" data-theme="light" aria-label="Jasny motyw" aria-pressed="false"><span class="theme-icon">☀</span>Jasny</button>
+                    <button id="themeDarkBtn" class="theme-btn" type="button" data-theme="dark" aria-label="Ciemny motyw" aria-pressed="false"><span class="theme-icon">☾</span>Ciemny</button>
+                </div>
             </div>
-            <div id="currentTimeLabel" style="font-size: 14px;">Godzina: <span style="color:#2ecc71; font-weight:bold;">12:00</span></div>
+            <div id="currentTimeLabel">Godzina: <span style="color: var(--slider-accent-strong, #4d4f52); font-weight: 700;">12:00</span></div>
         </div>
         <div class="slider-wrapper">
             <input type="range" id="hourSlider" class="timeline-slider" min="0" max="23" value="12">
