@@ -138,13 +138,39 @@ function clearMapData() {
 
 let layersControl = null;
 
+function getLastAvailableHourFromData(data) {
+    if (!data || !Array.isArray(data.features)) return 23;
+
+    let maxHour = -1;
+    data.features.forEach(feature => {
+        const props = feature && feature.properties ? feature.properties : null;
+        if (!props || props.Status !== 'ACTIVE' || !props.Hourly) return;
+
+        Object.keys(props.Hourly).forEach(hourKey => {
+            const hourValue = props.Hourly[hourKey];
+            if (!hourValue) return;
+            const hourNum = Number(hourKey);
+            if (!Number.isNaN(hourNum)) {
+                const hasMeasurement = Object.keys(hourValue).some(key => hourValue[key] !== undefined && hourValue[key] !== null && hourValue[key] !== '');
+                if (hasMeasurement) maxHour = Math.max(maxHour, hourNum);
+            }
+        });
+    });
+
+    return maxHour >= 0 ? maxHour : 23;
+}
+
 function processData(data) {
     globalGeoJsonData = data; 
     const hourSlider = document.getElementById('hourSlider');
-    
-    // Pobieranie wartości suwaka (jeśli jest zainicjalizowany, weźmie wyliczoną aktualną godzinę)
-    const selectedHour = hourSlider ? String(hourSlider.value).padStart(2, '0') : '12';
-    renderDataForHour(selectedHour);
+    const hourStr = hourSlider ? String(getLastAvailableHourFromData(data)).padStart(2, '0') : '12';
+    if (hourSlider) {
+        hourSlider.value = String(getLastAvailableHourFromData(data));
+        const currentTimeLabel = document.getElementById('currentTimeLabel');
+        const span = currentTimeLabel ? currentTimeLabel.querySelector('span') : null;
+        if (span) span.textContent = hourStr + ':00';
+    }
+    renderDataForHour(hourStr);
 }
 
 function renderDataForHour(hourStr) {
@@ -291,14 +317,39 @@ function renderDataForHour(hourStr) {
     updateLegendVisibility();
 }
 
+function showNoDataState(dateStr) {
+    clearMapData();
+    globalGeoJsonData = null;
+
+    const currentTimeLabel = document.getElementById('currentTimeLabel');
+    const span = currentTimeLabel ? currentTimeLabel.querySelector('span') : null;
+    if (span) {
+        span.textContent = 'brak danych';
+        span.style.color = '#e74c3c';
+    }
+
+    const datePicker = document.getElementById('datePicker');
+    if (datePicker) {
+        datePicker.title = `Brak danych dla ${dateStr}`;
+        datePicker.setCustomValidity('Brak danych dla tej daty');
+    }
+}
+
 function loadDataForDate(dateStr) {
     clearMapData();
     if (!dateStr) return;
     const path = `imgw_data/${dateStr}.geojson`;
     fetch(path).then(r => { if (!r.ok) throw new Error('no file'); return r.json(); }).then(j => {
+        globalGeoJsonData = j;
         processData(j);
+        const currentTimeLabel = document.getElementById('currentTimeLabel');
+        const span = currentTimeLabel ? currentTimeLabel.querySelector('span') : null;
+        if (span) span.style.color = '#2ecc71';
+        const datePicker = document.getElementById('datePicker');
+        if (datePicker) datePicker.setCustomValidity('');
     }).catch(err => {
         console.error('Could not load', path, err);
+        showNoDataState(dateStr);
     });
 }
 
@@ -449,18 +500,10 @@ function initTimelineUI() {
         if (span) span.textContent = (val < 10 ? '0' + val : val) + ':00';
     }
 
-    // ZMIANA: Dynamiczne wyliczenie aktualnej daty oraz ostatniej pełnej godziny systemowej
     const now = new Date();
-    const todayStr = now.toISOString().slice(0, 10); // Format YYYY-MM-DD
-    
-    // Ostatnia pełna godzina (aktualna godzina minus 1). Zabezpieczenie przed przejściem poniżej zera.
-    let targetHour = now.getHours() - 1;
-    if (targetHour < 0) targetHour = 23; 
+    const todayStr = now.toISOString().slice(0, 10);
 
     if (hourSlider) {
-        hourSlider.value = targetHour;
-        updateTimeLabel(targetHour);
-        
         hourSlider.addEventListener('input', (e) => {
             const val = e.target.value;
             updateTimeLabel(val);
@@ -470,23 +513,8 @@ function initTimelineUI() {
     }
 
     if (datePicker) {
-        // ZMIANA: Domyślnie ładujemy dzisiejszą datę systemową, aby uniknąć opóźnień z pliku JSON
         datePicker.value = todayStr;
         loadDataForDate(todayStr);
-
-        // Opcjonalnie pobieramy plik z datami w tle, aby sprawdzić czy dzisiejszy plik na pewno fizycznie istnieje w bazie danych
-        fetch('imgw_data/dates.json').then(r => { if (!r.ok) throw new Error('no dates'); return r.json(); }).then(dates => {
-            if (Array.isArray(dates) && dates.length) {
-                // Jeśli z jakiegoś powodu dzisiejszej daty nie ma jeszcze w spisie (np. awaria bota), cofnij do ostatniego dostępnego dnia
-                if (!dates.includes(todayStr)) {
-                    const lastAvailableDate = dates[dates.length - 1];
-                    datePicker.value = lastAvailableDate;
-                    loadDataForDate(lastAvailableDate);
-                }
-            }
-        }).catch(err => { 
-            console.warn('Wyszukiwanie pliku dates.json nie powiodło się, pozostaję przy dacie systemowej:', err); 
-        });
 
         datePicker.addEventListener('change', () => {
             loadDataForDate(datePicker.value);
