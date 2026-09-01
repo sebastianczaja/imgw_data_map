@@ -504,42 +504,64 @@ legendControl.onAdd = function() {
     const precipReversedScale = [...precipLegendScale].reverse();
     const precipStepsCount = precipReversedScale.length;
     const precipStepPercent = 100 / precipStepsCount;
-    const precipHeight = 270;
-    const tempHeight = 270;
+    const precipHeight = 280;
+    const tempHeight = 280;
 
     div.innerHTML = `
         <div class="panel-header">
             <button type="button" class="panel-toggle-btn" aria-label="Zwiń/rozwiń okno legendy" title="Zwiń/rozwiń okno legendy">▾</button>
             <div class="panel-title">Legenda:</div>
         </div>
-        <div style="display:flex; align-items:flex-start; gap:12px;">
+        <div style="display:flex; align-items:flex-start; gap:12px; padding-bottom: 12px; margin-bottom: 0;">
             <div style="flex:1; min-width:0;">
-                <div class="legend-subtitle" style="font-size:10px; color:#374151; font-weight:700; margin: 1px 0 3px 0;">Temperatura:</div>
-                <div class="legend-body" style="display:flex; align-items:stretch; height: ${tempHeight}px;">
+                <div class="legend-subtitle" style="font-size:10px; color:#374151; font-weight:700; margin: 1px 0 10px 0;">Temperatura:</div>
+                <div class="legend-body" style="display:flex; align-items:stretch; height: ${tempHeight}px; position:relative;">
                     <div class="legend-bar" style="
-                        width: 7px;
+                        width: 6px;
                         margin-right: 6px;
                         border: 1px solid #999;
                         background:
                             linear-gradient(to bottom, ${reversedScale.map(i => `rgb(${i.r},${i.g},${i.b})`).join(', ')});
-                    "></div>
-                    <div class="legend-labels" style="display:flex; flex-direction:column; justify-content:space-between; gap: 0; min-width: 0;">
-                        ${reversedScale.map(i => `<div class="legend-label-row" style="height: calc(${tempHeight}px / ${stepsCount}); display:flex; align-items:center; font-size:9.1px; line-height:1; letter-spacing:-0.03em;"> <span class="legend-value" style="font-weight:400; color:#374151; opacity:0.8; display:inline-block; min-width:0; white-space:nowrap;">${i.t}°C</span></div>`).join('')}
+                        position: relative;
+                    ">
+                        <div style="position:absolute; top:0; left:0; width:100%; height:100%; pointer-events:none;">
+                            ${reversedScale.map((i, idx) => {
+                                const percent = (idx / (reversedScale.length - 1)) * 100;
+                                return `<div style="position:absolute; top:${percent}%; left:50%; width:10px; height:1px; background:#aaa; opacity:0.7; transform:translate(-50%, -50%);"></div>`;
+                            }).join('')}
+                        </div>
+                    </div>
+                    <div class="legend-labels" style="position:relative; flex:1; min-width:0;">
+                        ${reversedScale.map((i, idx) => {
+                            const percent = (idx / (reversedScale.length - 1)) * 100;
+                            return `<div class="legend-label-row" style="position:absolute; top:${percent}%; left:0; transform:translateY(-50%); font-size:9.1px; line-height:1; letter-spacing:-0.03em; white-space:nowrap;"> <span class="legend-value" style="font-weight:400; color:#374151; opacity:0.8;">${i.t}°C</span></div>`;
+                        }).join('')}
                     </div>
                 </div>
             </div>
             <div style="flex:1; min-width:0;">
-                <div class="legend-subtitle" style="font-size:10px; color:#374151; font-weight:700; margin: 1px 0 3px 0;">Opady:</div>
-                <div class="legend-body" style="display:flex; align-items:stretch; height: ${precipHeight}px;">
+                <div class="legend-subtitle" style="font-size:10px; color:#374151; font-weight:700; margin: 1px 0 10px 0;">Opady:</div>
+                <div class="legend-body" style="display:flex; align-items:stretch; height: ${precipHeight}px; position:relative;">
                     <div class="legend-bar" style="
-                        width: 7px;
+                        width: 6px;
                         margin-right: 6px;
                         border: 1px solid #999;
                         background:
                             linear-gradient(to bottom, ${precipReversedScale.map(i => `rgb(${i.r},${i.g},${i.b})`).join(', ')});
-                    "></div>
-                    <div class="legend-labels" style="display:flex; flex-direction:column; justify-content:space-between; gap: 0; min-width: 0;">
-                        ${precipReversedScale.map(i => `<div class="legend-label-row" style="height: calc(${precipHeight}px / ${precipStepsCount}); display:flex; align-items:center; font-size:9.1px; line-height:1; letter-spacing:-0.03em;"> <span class="legend-value" style="font-weight:400; color:#374151; opacity:0.8; display:inline-block; min-width:0; white-space:nowrap;">${i.mm} mm</span></div>`).join('')}
+                        position: relative;
+                    ">
+                        <div style="position:absolute; top:0; left:0; width:100%; height:100%; pointer-events:none;">
+                            ${precipReversedScale.map((i, idx) => {
+                                const percent = (idx / (precipReversedScale.length - 1)) * 100;
+                                return `<div style="position:absolute; top:${percent}%; left:50%; width:10px; height:1px; background:#aaa; opacity:0.7; transform:translate(-50%, -50%);"></div>`;
+                            }).join('')}
+                        </div>
+                    </div>
+                    <div class="legend-labels" style="position:relative; flex:1; min-width:0;">
+                        ${precipReversedScale.map((i, idx) => {
+                            const percent = (idx / (precipReversedScale.length - 1)) * 100;
+                            return `<div class="legend-label-row" style="position:absolute; top:${percent}%; left:0; transform:translateY(-50%); font-size:9.1px; line-height:1; letter-spacing:-0.03em; white-space:nowrap;"> <span class="legend-value" style="font-weight:400; color:#374151; opacity:0.8;">${i.mm} mm</span></div>`;
+                        }).join('')}
                     </div>
                 </div>
             </div>
