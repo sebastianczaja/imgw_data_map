@@ -184,9 +184,9 @@
             padding-right: 2px;
         }
         .map-legend-container {
-            width: 148px;
-            max-width: 148px;
-            min-width: 148px;
+            width: 210px;
+            max-width: 210px;
+            min-width: 210px;
             box-sizing: border-box;
             background: var(--panel-bg);
             border-radius: 6px;
@@ -469,9 +469,9 @@
 
         /* PIONOWA LEGENDA */
         .map-legend-container {
-            width: 148px;
-            max-width: 148px;
-            min-width: 148px;
+            width: 220px;
+            max-width: 220px;
+            min-width: 220px;
             box-sizing: border-box;
             background: var(--panel-bg);
             border-radius: 6px;
@@ -551,9 +551,9 @@
         }
         .timeline-header {
             display: flex;
-            justify-content: space-between;
             align-items: center;
-            gap: 12px;
+            width: 100%;
+            gap: 0;
             font-size: 11px;
             color: var(--text-main);
             font-weight: bold;
@@ -562,8 +562,16 @@
         .timeline-controls {
             display: flex;
             align-items: center;
-            gap: 10px;
-            flex-wrap: wrap;
+            flex: 1 1 auto;
+            gap: 0;
+            min-width: 0;
+            width: 100%;
+        }
+        .timeline-controls > * {
+            display: inline-flex;
+            align-items: center;
+            height: 16px;
+            flex-shrink: 0;
         }
         #currentTimeLabel {
             font-size: 11px;
@@ -579,6 +587,20 @@
             line-height: 1.2;
             display: inline-block;
         }
+        .realtime-info {
+            display: inline-flex;
+            align-items: center;
+            justify-content: flex-end;
+            padding-left: 10px;
+            border-left: 1px solid var(--input-border);
+            margin-left: auto;
+            height: 16px;
+            font-size: 11px;
+            line-height: 1;
+            font-weight: 700;
+            color: var(--text-main);
+            white-space: nowrap;
+        }
         .timeline-controls input[type="date"] {
             border: 1px solid var(--input-border);
             background: var(--input-bg);
@@ -589,12 +611,14 @@
             font-size: 10.5px;
             outline: none;
             height: 20px;
-            min-width: 88px;
-            width: 88px;
+            min-width: 80px;
+            width: 80px;
             box-sizing: border-box;
             text-align: center;
             display: block;
             cursor: pointer;
+            margin-left: 5px;
+            margin-right: 18px;
         }
         .timeline-controls input[type="date"]::-webkit-calendar-picker-indicator {
             filter: invert(0.8) brightness(1.2);
@@ -608,21 +632,39 @@
             display: inline-flex;
             align-items: center;
             gap: 6px;
-            flex-wrap: wrap;
-            padding-left: 8px;
+            flex-wrap: nowrap;
+            padding-left: 12px;
+            padding-right: 12px;
             border-left: 1px solid var(--input-border);
+            margin-right: 14px;
             margin-left: 2px;
+            height: 16px;
+            line-height: 1;
+            transform: translateX(8px);
         }
         .theme-picker-label {
             font-size: 11px;
             color: var(--text-main);
             white-space: nowrap;
             font-weight: 700;
+            line-height: 1;
         }
-        .timeline-controls > span:first-child {
+        .source-info {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            padding-left: 10px;
+            padding-right: 10px;
+            margin-right: 0;
+            margin-left: 2px;
+            border-left: 1px solid var(--input-border);
+            height: 16px;
             font-size: 11px;
-            color: var(--text-main);
+            line-height: 1;
             font-weight: 700;
+            color: var(--text-main);
+            white-space: nowrap;
+            transform: translateX(8px);
         }
         .theme-btn {
             border: 1px solid var(--input-border);
@@ -726,15 +768,16 @@
     <div id="timeline-container">
         <div class="timeline-header">
             <div class="timeline-controls">
-                <span style="color: var(--text-main); font-weight: 700;">Wybór daty:</span>
+                <span style="color: var(--text-main); font-weight: 700; font-size: 11px; line-height: 1;">Data:</span>
                 <input type="date" id="datePicker">
                 <div class="theme-picker" aria-label="Wybór motywu">
                     <span class="theme-picker-label">Motyw:</span>
                     <button id="themeLightBtn" class="theme-btn" type="button" data-theme="light" aria-label="Jasny motyw" aria-pressed="false"><span class="theme-icon">☀</span>Jasny</button>
                     <button id="themeDarkBtn" class="theme-btn" type="button" data-theme="dark" aria-label="Ciemny motyw" aria-pressed="false"><span class="theme-icon">☾</span>Ciemny</button>
                 </div>
+                <div class="source-info" aria-label="Źródło danych">Źródło danych: IMGW-PIB</div>
             </div>
-            <div id="currentTimeLabel">Godzina: <span style="color: var(--slider-accent-strong, #4d4f52); font-weight: 700;">12:00</span></div>
+            <div class="realtime-info">Prezentacja danych: czas lokalny (Polska)</div>
         </div>
         <div class="slider-wrapper">
             <input type="range" id="hourSlider" class="timeline-slider" min="0" max="23" value="12">

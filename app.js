@@ -87,12 +87,12 @@ function convertMetersPerSecondToKilometersPerHour(value) {
 }
 
 const tempScale = [
-    { t: -40, r: 245, g: 242, b: 245 }, { t: -35, r: 212, g: 185, b: 204 }, { t: -30, r: 125, g: 90,  b: 110 },
+    { t: -50, r: 255, g: 255, b: 255 }, { t: -45, r: 232, g: 220, b: 246 }, { t: -40, r: 245, g: 242, b: 245 }, { t: -35, r: 212, g: 185, b: 204 }, { t: -30, r: 125, g: 90,  b: 110 },
     { t: -25, r: 214, g: 110, b: 247 }, { t: -20, r: 135, g: 45,  b: 230 }, { t: -15, r: 40,  g: 30,  b: 215 },
     { t: -10, r: 50,  g: 100, b: 230 }, { t: -5,  r: 120, g: 190, b: 245 }, { t: 0,   r: 195, g: 255, b: 250 },
     { t: 5,   r: 120, g: 235, b: 160 }, { t: 10,  r: 55,  g: 160, b: 50  }, { t: 15,  r: 175, g: 215, b: 65  },
     { t: 20,  r: 255, g: 245, b: 50  }, { t: 25,  r: 255, g: 165, b: 40  }, { t: 30,  r: 255, g: 50,  b: 40  },
-    { t: 35,  r: 180, g: 25,  b: 45  }, { t: 40,  r: 245, g: 150, b: 180 }
+    { t: 35,  r: 180, g: 25,  b: 45  }, { t: 40,  r: 245, g: 150, b: 180 }, { t: 45, r: 249, g: 198, b: 205 }, { t: 50, r: 255, g: 255, b: 255 }
 ];
 
 function getTemperatureStyle(temp) {
@@ -478,23 +478,70 @@ legendControl.onAdd = function() {
     const stepsCount = reversedScale.length;
     const stepPercent = 100 / stepsCount;
 
+    const precipLegendScale = [
+        { mm: 0, r: 255, g: 255, b: 255 },
+        { mm: 10, r: 170, g: 214, b: 255 },
+        { mm: 20, r: 120, g: 185, b: 255 },
+        { mm: 30, r: 70, g: 110, b: 220 },
+        { mm: 40, r: 48, g: 80, b: 180 },
+        { mm: 50, r: 120, g: 90, b: 200 },
+        { mm: 60, r: 170, g: 120, b: 210 },
+        { mm: 70, r: 220, g: 120, b: 170 },
+        { mm: 80, r: 240, g: 150, b: 180 },
+        { mm: 90, r: 245, g: 175, b: 190 },
+        { mm: 100, r: 200, g: 170, b: 170 },
+        { mm: 110, r: 190, g: 170, b: 170 },
+        { mm: 120, r: 180, g: 170, b: 170 },
+        { mm: 130, r: 190, g: 190, b: 190 },
+        { mm: 140, r: 200, g: 200, b: 200 },
+        { mm: 150, r: 215, g: 215, b: 215 },
+        { mm: 160, r: 225, g: 225, b: 225 },
+        { mm: 170, r: 235, g: 235, b: 235 },
+        { mm: 180, r: 240, g: 240, b: 240 },
+        { mm: 190, r: 248, g: 248, b: 248 },
+        { mm: 200, r: 255, g: 255, b: 255 }
+    ];
+    const precipReversedScale = [...precipLegendScale].reverse();
+    const precipStepsCount = precipReversedScale.length;
+    const precipStepPercent = 100 / precipStepsCount;
+    const precipHeight = 270;
+    const tempHeight = 270;
+
     div.innerHTML = `
         <div class="panel-header">
             <button type="button" class="panel-toggle-btn" aria-label="Zwiń/rozwiń okno legendy" title="Zwiń/rozwiń okno legendy">▾</button>
             <div class="panel-title">Legenda:</div>
         </div>
-        <div class="legend-subtitle" style="font-size:10px; color:#374151; font-weight:700; margin: 1px 0 3px 0;">Temperatura:</div>
-        <div class="legend-body" style="display:flex; align-items:stretch; height: 242px;">
-            <div class="legend-bar" style="
-                width: 7px;
-                margin-right: 6px;
-                border: 1px solid #999;
-                background:
-                    repeating-linear-gradient(to bottom, transparent, transparent calc(${stepPercent}% - 1px), rgba(255,255,255,0.6) calc(${stepPercent}% - 1px), rgba(255,255,255,0.6) ${stepPercent}%),
-                    linear-gradient(to bottom, ${reversedScale.map(i => `rgb(${i.r},${i.g},${i.b})`).join(', ')});
-            "></div>
-            <div class="legend-labels" style="display:flex; flex-direction:column; justify-content:space-between; gap: 0; min-width: 0;">
-                ${reversedScale.map(i => `<div class="legend-label-row" style="height: calc(242px / ${stepsCount}); display:flex; align-items:center; font-size:9.1px; line-height:1; letter-spacing:-0.03em;"> <span class="legend-value" style="font-weight:400; color:#374151; opacity:0.8; display:inline-block; min-width:0; white-space:nowrap;">${i.t}°C</span></div>`).join('')}
+        <div style="display:flex; align-items:flex-start; gap:12px;">
+            <div style="flex:1; min-width:0;">
+                <div class="legend-subtitle" style="font-size:10px; color:#374151; font-weight:700; margin: 1px 0 3px 0;">Temperatura:</div>
+                <div class="legend-body" style="display:flex; align-items:stretch; height: ${tempHeight}px;">
+                    <div class="legend-bar" style="
+                        width: 7px;
+                        margin-right: 6px;
+                        border: 1px solid #999;
+                        background:
+                            linear-gradient(to bottom, ${reversedScale.map(i => `rgb(${i.r},${i.g},${i.b})`).join(', ')});
+                    "></div>
+                    <div class="legend-labels" style="display:flex; flex-direction:column; justify-content:space-between; gap: 0; min-width: 0;">
+                        ${reversedScale.map(i => `<div class="legend-label-row" style="height: calc(${tempHeight}px / ${stepsCount}); display:flex; align-items:center; font-size:9.1px; line-height:1; letter-spacing:-0.03em;"> <span class="legend-value" style="font-weight:400; color:#374151; opacity:0.8; display:inline-block; min-width:0; white-space:nowrap;">${i.t}°C</span></div>`).join('')}
+                    </div>
+                </div>
+            </div>
+            <div style="flex:1; min-width:0;">
+                <div class="legend-subtitle" style="font-size:10px; color:#374151; font-weight:700; margin: 1px 0 3px 0;">Opady:</div>
+                <div class="legend-body" style="display:flex; align-items:stretch; height: ${precipHeight}px;">
+                    <div class="legend-bar" style="
+                        width: 7px;
+                        margin-right: 6px;
+                        border: 1px solid #999;
+                        background:
+                            linear-gradient(to bottom, ${precipReversedScale.map(i => `rgb(${i.r},${i.g},${i.b})`).join(', ')});
+                    "></div>
+                    <div class="legend-labels" style="display:flex; flex-direction:column; justify-content:space-between; gap: 0; min-width: 0;">
+                        ${precipReversedScale.map(i => `<div class="legend-label-row" style="height: calc(${precipHeight}px / ${precipStepsCount}); display:flex; align-items:center; font-size:9.1px; line-height:1; letter-spacing:-0.03em;"> <span class="legend-value" style="font-weight:400; color:#374151; opacity:0.8; display:inline-block; min-width:0; white-space:nowrap;">${i.mm} mm</span></div>`).join('')}
+                    </div>
+                </div>
             </div>
         </div>
     `;
