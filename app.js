@@ -380,9 +380,9 @@ baseMapControl.onAdd = function() {
         <div class="basemap-footer">
             <div class="basemap-range-group">
                 <label for="opacitySlider">
-                    Przezroczystość: <span id="opacityVal" style="font-weight:700; color: var(--slider-accent-strong, #4d4f52); margin-left:2px;">90%</span>
+                    Widoczność podkładu: <span id="opacityVal" style="font-size: inherit; font-weight:700; color: var(--slider-accent-strong, #4d4f52); margin-left:2px;">100%</span>
                 </label>
-                <input type="range" id="opacitySlider" min="0" max="1" step="0.1" value="0.9" style="width: 100%; display: block; margin: 0; cursor: pointer;">
+                <input type="range" id="opacitySlider" min="0" max="1" step="0.1" value="1" style="width: 100%; display: block; margin: 0; cursor: pointer;">
             </div>
             <div class="basemap-range-group basemap-range-group--zoom">
                 <label for="zoomSlider">
