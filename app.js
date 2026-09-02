@@ -365,17 +365,30 @@ function buildUnifiedLayerControl() {
             { mm: 200, r: 255, g: 255, b: 255 }
         ];
         const precipReversedScale = [...precipLegendScale].reverse();
-        const windLegendScale = Array.from({ length: 21 }, (_, index) => {
-            const kmh = index * 10;
-            const fraction = kmh / 200;
-            return {
-                kmh,
-                r: Math.round(255 - fraction * 105),
-                g: Math.round(255 - fraction * 220),
-                b: Math.round(255 - fraction * 200)
-            };
-        });
-        const windReversedScale = [...windLegendScale].reverse();
+        const windColorStops = [
+            { kmh: 0, r: 255, g: 255, b: 255 },
+            { kmh: 10, r: 197, g: 213, b: 224 },
+            { kmh: 20, r: 79, g: 145, b: 200 },
+            { kmh: 30, r: 61, g: 175, b: 160 },
+            { kmh: 40, r: 84, g: 174, b: 88 },
+            { kmh: 50, r: 143, g: 214, b: 163 },
+            { kmh: 60, r: 241, g: 220, b: 69 },
+            { kmh: 70, r: 243, g: 154, b: 54 },
+            { kmh: 80, r: 216, g: 107, b: 38 },
+            { kmh: 90, r: 222, g: 55, b: 61 },
+            { kmh: 100, r: 151, g: 27, b: 40 },
+            { kmh: 110, r: 93, g: 16, b: 28 },
+            { kmh: 120, r: 116, g: 29, b: 49 },
+            { kmh: 130, r: 132, g: 62, b: 76 },
+            { kmh: 140, r: 148, g: 96, b: 106 },
+            { kmh: 150, r: 163, g: 126, b: 133 },
+            { kmh: 160, r: 178, g: 153, b: 158 },
+            { kmh: 170, r: 193, g: 177, b: 181 },
+            { kmh: 180, r: 208, g: 199, b: 201 },
+            { kmh: 190, r: 227, g: 223, b: 224 },
+            { kmh: 200, r: 245, g: 245, b: 245 }
+        ];
+        const windReversedScale = [...windColorStops].reverse();
         const tempHeight = 250;
         const precipHeight = 250;
         const windHeight = 250;
