@@ -95,7 +95,7 @@ const tempScale = [
     { t: 35,  r: 180, g: 25,  b: 45  }, { t: 40,  r: 245, g: 150, b: 180 }, { t: 45, r: 249, g: 198, b: 205 }, { t: 50, r: 255, g: 255, b: 255 }
 ];
 
-const precipLabelScale = [[0, 255, 255, 255], [10, 170, 214, 255], [20, 120, 185, 255], [30, 70, 110, 220], [40, 48, 80, 180], [50, 120, 90, 200], [60, 170, 120, 210], [70, 220, 120, 170], [80, 240, 150, 180], [90, 245, 175, 190], [100, 200, 170, 170], [110, 190, 170, 170], [120, 180, 170, 170], [130, 190, 190, 190], [140, 200, 200, 200], [150, 215, 215, 215], [160, 225, 225, 225], [170, 235, 235, 235], [180, 240, 240, 240], [190, 248, 248, 248], [200, 255, 255, 255]];
+const precipLabelScale = [[0, 225, 242, 255], [5, 145, 210, 250], [10, 55, 145, 230], [20, 30, 90, 195], [30, 25, 55, 130], [40, 65, 30, 125], [50, 105, 35, 155], [60, 145, 35, 175], [70, 180, 35, 170], [80, 205, 45, 175], [90, 225, 80, 190], [100, 240, 115, 205], [110, 242, 145, 201], [120, 244, 165, 208], [130, 235, 175, 210], [140, 224, 183, 211], [150, 210, 190, 210], [160, 195, 198, 209], [170, 182, 207, 211], [180, 185, 218, 219], [190, 205, 232, 230], [200, 255, 255, 255]];
 const windLabelScale = [[0, 255, 255, 255], [10, 197, 213, 224], [20, 79, 145, 200], [30, 61, 175, 160], [40, 84, 174, 88], [50, 143, 214, 163], [60, 241, 220, 69], [70, 243, 154, 54], [80, 216, 107, 38], [90, 222, 55, 61], [100, 151, 27, 40], [110, 93, 16, 28], [120, 116, 29, 49], [130, 132, 62, 76], [140, 148, 96, 106], [150, 163, 126, 133], [160, 178, 153, 158], [170, 193, 177, 181], [180, 208, 199, 201], [190, 227, 223, 224], [200, 245, 245, 245]];
 
 function getLabelScaleColor(value, scale) {
@@ -115,6 +115,17 @@ function getLabelScaleColor(value, scale) {
         }
     }
     return 'rgba(230, 233, 234, 0.98)';
+}
+
+function getContrastTextColor(backgroundColor) {
+    const channels = backgroundColor.match(/rgba?\((\d+),\s*(\d+),\s*(\d+)/);
+    if (!channels) return 'rgb(17, 24, 39)';
+    const [red, green, blue] = channels.slice(1, 4).map(Number).map(channel => {
+        const normalized = channel / 255;
+        return normalized <= 0.03928 ? normalized / 12.92 : Math.pow((normalized + 0.055) / 1.055, 2.4);
+    });
+    const luminance = 0.2126 * red + 0.7152 * green + 0.0722 * blue;
+    return luminance >= 0.18 ? '#000000' : '#ffffff';
 }
 
 function getTemperatureStyle(temp) {
@@ -156,7 +167,8 @@ function addDataToParamGroup(rawValue, suffix, className, positionClass, latlng,
             const labelColor = isTemperatureLayer
                 ? getTemperatureStyle(rawValue).bg
                 : getLabelScaleColor(rawValue, isPrecipitationLayer ? precipLabelScale : windLabelScale);
-            tooltipContent = `<div style="background: ${labelColor} !important; border: ${borderStyle} !important; width: 100%; height: 100%; display: inline-flex; align-items: center; justify-content: center; margin: -1px -3px; padding: 1px 3px; border-radius: 2px;">${formatted}${suffix}</div>`;
+            const textColor = getContrastTextColor(labelColor);
+            tooltipContent = `<div style="background: ${labelColor} !important; color: ${textColor} !important; text-shadow: none; border: ${borderStyle} !important; width: 100%; height: 100%; display: inline-flex; align-items: center; justify-content: center; margin: -1px -2px; padding: 0 2px; border-radius: 2px;">${formatted}${suffix}</div>`;
         } else {
             tooltipContent = `${formatted}${suffix}`;
         }
@@ -367,30 +379,10 @@ function buildUnifiedLayerControl() {
     layersControl.onAdd = function () {
         const div = L.DomUtil.create('div', 'leaflet-control compact-panel main-control-panel');
         const reversedScale = [...tempScale].reverse();
-        const precipLegendScale = [
-            { mm: 0, r: 255, g: 255, b: 255 },
-            { mm: 10, r: 170, g: 214, b: 255 },
-            { mm: 20, r: 120, g: 185, b: 255 },
-            { mm: 30, r: 70, g: 110, b: 220 },
-            { mm: 40, r: 48, g: 80, b: 180 },
-            { mm: 50, r: 120, g: 90, b: 200 },
-            { mm: 60, r: 170, g: 120, b: 210 },
-            { mm: 70, r: 220, g: 120, b: 170 },
-            { mm: 80, r: 240, g: 150, b: 180 },
-            { mm: 90, r: 245, g: 175, b: 190 },
-            { mm: 100, r: 200, g: 170, b: 170 },
-            { mm: 110, r: 190, g: 170, b: 170 },
-            { mm: 120, r: 180, g: 170, b: 170 },
-            { mm: 130, r: 190, g: 190, b: 190 },
-            { mm: 140, r: 200, g: 200, b: 200 },
-            { mm: 150, r: 215, g: 215, b: 215 },
-            { mm: 160, r: 225, g: 225, b: 225 },
-            { mm: 170, r: 235, g: 235, b: 235 },
-            { mm: 180, r: 240, g: 240, b: 240 },
-            { mm: 190, r: 248, g: 248, b: 248 },
-            { mm: 200, r: 255, g: 255, b: 255 }
-        ];
+        const precipLegendScale = precipLabelScale.map(([mm, r, g, b]) => ({ mm, r, g, b }));
         const precipReversedScale = [...precipLegendScale].reverse();
+        const precipTickScale = precipLegendScale.filter(item => item.mm % 10 === 0);
+        const precipReversedTickScale = [...precipTickScale].reverse();
         const windColorStops = [
             { kmh: 0, r: 255, g: 255, b: 255 },
             { kmh: 10, r: 197, g: 213, b: 224 },
@@ -483,15 +475,15 @@ function buildUnifiedLayerControl() {
                             <div class="legend-body" style="display:flex; align-items:stretch; height: ${precipHeight}px; position:relative; padding-left:18px;">
                                 <div class="legend-bar" style="width: 6px; margin-right: 6px; border: 1px solid #999; background: linear-gradient(to bottom, ${precipReversedScale.map(i => `rgb(${i.r},${i.g},${i.b})`).join(', ')}); position: relative;">
                                     <div style="position:absolute; top:0; left:0; width:100%; height:100%; pointer-events:none;">
-                                        ${precipReversedScale.map((i, idx) => {
-                                            const percent = (idx / (precipReversedScale.length - 1)) * 100;
+                                        ${precipReversedTickScale.map((i, idx) => {
+                                            const percent = (idx / (precipReversedTickScale.length - 1)) * 100;
                                             return `<div style="position:absolute; top:${percent}%; left:50%; width:10px; height:1px; background:#aaa; opacity:0.7; transform:translate(-50%, -50%);"></div>`;
                                         }).join('')}
                                     </div>
                                 </div>
                                 <div class="legend-labels" style="position:relative; flex:1; min-width:0;">
-                                    ${precipReversedScale.map((i, idx) => {
-                                        const percent = (idx / (precipReversedScale.length - 1)) * 100;
+                                    ${precipReversedTickScale.map((i, idx) => {
+                                        const percent = (idx / (precipReversedTickScale.length - 1)) * 100;
                                         return `<div class="legend-label-row" style="position:absolute; top:${percent}%; left:0; transform:translateY(-50%); font-size:9.1px; line-height:1; letter-spacing:-0.03em; white-space:nowrap;"> <span class="legend-value" style="font-weight:400; color:#374151; opacity:0.8;">${i.mm}</span></div>`;
                                     }).join('')}
                                 </div>
