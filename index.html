@@ -225,9 +225,9 @@
             justify-content: space-between;
             align-items: center;
             width: 100%;
-            min-height: 30px;
+            min-height: 28px;
             margin: 0 0 10px 0;
-            padding: 0 0 7px 0;
+            padding: 0 0 3px 0;
             border-bottom: 2px solid var(--header-border);
         }
         .main-control-panel .panel-main-title {
@@ -244,13 +244,15 @@
         .main-control-panel .panel-body {
             display: flex;
             flex-direction: column;
-            gap: 4px;
+            gap: 2px;
             width: 100%;
             padding: 0;
             margin: 0;
         }
         .main-control-panel .basemap-body {
-            margin-bottom: 12px;
+            margin-bottom: 10px;
+            padding-bottom: 8px;
+            border-bottom: 2px solid var(--header-border);
         }
         .main-control-panel .basemap-body label,
         .main-control-panel .panel-body label,
@@ -274,7 +276,7 @@
             flex-direction: column;
             gap: 8px;
             width: 100%;
-            padding-top: 4px;
+            padding-top: 0;
         }
         .main-control-panel .basemap-range-group {
             display: flex;
@@ -289,6 +291,24 @@
             color: var(--text-main);
             margin: 0;
             line-height: 1.2;
+        }
+        .main-control-panel .setting-value-field {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            min-width: 34px;
+            height: 20px;
+            margin-left: 3px;
+            padding: 0 5px;
+            box-sizing: border-box;
+            border: 1px solid var(--input-border);
+            border-radius: 4px;
+            background: var(--input-bg);
+            color: var(--text-main);
+            font-size: 11px;
+            font-weight: 700;
+            line-height: 1;
+            vertical-align: middle;
         }
         .main-control-panel input[type="range"] {
             -webkit-appearance: none;
@@ -351,8 +371,39 @@
         .map-legend-container .legend-subtitle {
             color: var(--legend-subtitle);
         }
+        .main-control-panel .legend-vertical-title {
+            position: absolute;
+            left: 0;
+            top: 50%;
+            z-index: 1;
+            margin: 0;
+            color: var(--text-main);
+            font-size: 9px;
+            font-weight: 700;
+            line-height: 1;
+            white-space: nowrap;
+            transform: rotate(-90deg) translateX(-50%);
+            transform-origin: left top;
+        }
         .main-control-panel .legend-temperature-column {
             margin-left: 8px;
+        }
+        .main-control-panel .legend-temperature-column,
+        .main-control-panel .legend-precipitation-column,
+        .main-control-panel .legend-wind-column {
+            flex: 1 1 0 !important;
+            margin-top: 6px;
+        }
+        .main-control-panel .legend-label-row {
+            width: 100%;
+            justify-content: center;
+            text-align: center;
+        }
+        .main-control-panel .legend-labels {
+            flex: 0 0 18px !important;
+        }
+        .main-control-panel .legend-bar {
+            margin-right: 1px !important;
         }
         .map-legend-container .panel-header {
             display: flex;
@@ -994,6 +1045,9 @@
             font-weight: 700 !important;
             font-size: 10px;
             font-family: Arial, sans-serif;
+        }
+        .main-control-panel #opacityVal {
+            font-size: 11px;
         }
     </style>
 </head>

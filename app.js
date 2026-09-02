@@ -365,8 +365,20 @@ function buildUnifiedLayerControl() {
             { mm: 200, r: 255, g: 255, b: 255 }
         ];
         const precipReversedScale = [...precipLegendScale].reverse();
-        const tempHeight = 220;
-        const precipHeight = 220;
+        const windLegendScale = Array.from({ length: 21 }, (_, index) => {
+            const kmh = index * 10;
+            const fraction = kmh / 200;
+            return {
+                kmh,
+                r: Math.round(255 - fraction * 105),
+                g: Math.round(255 - fraction * 220),
+                b: Math.round(255 - fraction * 200)
+            };
+        });
+        const windReversedScale = [...windLegendScale].reverse();
+        const tempHeight = 250;
+        const precipHeight = 250;
+        const windHeight = 250;
 
         div.innerHTML = `
             <div class="panel-global-header">
@@ -385,11 +397,11 @@ function buildUnifiedLayerControl() {
                 </div>
                 <div class="basemap-footer">
                     <div class="basemap-range-group">
-                        <label for="opacitySlider">Widoczność podkładu: <span id="opacityVal">100%</span></label>
+                        <label for="opacitySlider">Widoczność podkładu: <span id="opacityVal" class="setting-value-field">100%</span></label>
                         <input type="range" id="opacitySlider" min="0" max="1" step="0.1" value="1">
                     </div>
                     <div class="basemap-range-group basemap-range-group--zoom">
-                        <label for="zoomSlider">Powiększenie mapy: <span id="zoomVal">6.7x</span></label>
+                        <label for="zoomSlider">Powiększenie mapy: <span id="zoomVal" class="setting-value-field">6.7x</span></label>
                         <input type="range" id="zoomSlider" min="4" max="18" step="0.1" value="6.7">
                     </div>
                 </div>
@@ -407,10 +419,10 @@ function buildUnifiedLayerControl() {
                     <div class="panel-title">Legenda:</div>
                 </div>
                 <div class="map-legend-container" style="width:auto; max-width:none; min-width:0; padding:8px 0 0 0; margin:0; background:transparent; box-shadow:none; border-radius:0;">
-                    <div style="display:flex; align-items:flex-start; gap:4px; padding-bottom: 12px; margin-bottom: 0;">
-                        <div class="legend-temperature-column" style="flex:1; min-width:0;">
-                            <div class="legend-subtitle" style="font-size:10px; color:#374151; font-weight:700; margin: 1px 0 10px 0;">Temperatura:</div>
-                            <div class="legend-body" style="display:flex; align-items:stretch; height: ${tempHeight}px; position:relative;">
+                    <div style="display:flex; align-items:flex-start; gap:2px; padding-bottom: 12px; margin-bottom: 0;">
+                        <div class="legend-temperature-column" style="flex:1; min-width:0; position:relative;">
+                            <div class="legend-subtitle legend-vertical-title">Temperatura [°C]:</div>
+                            <div class="legend-body" style="display:flex; align-items:stretch; height: ${tempHeight}px; position:relative; padding-left:18px;">
                                 <div class="legend-bar" style="width: 6px; margin-right: 6px; border: 1px solid #999; background: linear-gradient(to bottom, ${reversedScale.map(i => `rgb(${i.r},${i.g},${i.b})`).join(', ')}); position: relative;">
                                     <div style="position:absolute; top:0; left:0; width:100%; height:100%; pointer-events:none;">
                                         ${reversedScale.map((i, idx) => {
@@ -422,14 +434,14 @@ function buildUnifiedLayerControl() {
                                 <div class="legend-labels" style="position:relative; flex:1; min-width:0;">
                                     ${reversedScale.map((i, idx) => {
                                         const percent = (idx / (reversedScale.length - 1)) * 100;
-                                        return `<div class="legend-label-row" style="position:absolute; top:${percent}%; left:0; transform:translateY(-50%); font-size:9.1px; line-height:1; letter-spacing:-0.03em; white-space:nowrap;"> <span class="legend-value" style="font-weight:400; color:#374151; opacity:0.8;">${i.t}°C</span></div>`;
+                                        return `<div class="legend-label-row" style="position:absolute; top:${percent}%; left:0; transform:translateY(-50%); font-size:9.1px; line-height:1; letter-spacing:-0.03em; white-space:nowrap;"> <span class="legend-value" style="font-weight:400; color:#374151; opacity:0.8;">${i.t}</span></div>`;
                                     }).join('')}
                                 </div>
                             </div>
                         </div>
-                        <div style="flex:1; min-width:0;">
-                            <div class="legend-subtitle" style="font-size:10px; color:#374151; font-weight:700; margin: 1px 0 10px 0;">Opady:</div>
-                            <div class="legend-body" style="display:flex; align-items:stretch; height: ${precipHeight}px; position:relative;">
+                        <div class="legend-precipitation-column" style="flex:1; min-width:0; position:relative;">
+                            <div class="legend-subtitle legend-vertical-title">Opady [mm]:</div>
+                            <div class="legend-body" style="display:flex; align-items:stretch; height: ${precipHeight}px; position:relative; padding-left:18px;">
                                 <div class="legend-bar" style="width: 6px; margin-right: 6px; border: 1px solid #999; background: linear-gradient(to bottom, ${precipReversedScale.map(i => `rgb(${i.r},${i.g},${i.b})`).join(', ')}); position: relative;">
                                     <div style="position:absolute; top:0; left:0; width:100%; height:100%; pointer-events:none;">
                                         ${precipReversedScale.map((i, idx) => {
@@ -441,7 +453,26 @@ function buildUnifiedLayerControl() {
                                 <div class="legend-labels" style="position:relative; flex:1; min-width:0;">
                                     ${precipReversedScale.map((i, idx) => {
                                         const percent = (idx / (precipReversedScale.length - 1)) * 100;
-                                        return `<div class="legend-label-row" style="position:absolute; top:${percent}%; left:0; transform:translateY(-50%); font-size:9.1px; line-height:1; letter-spacing:-0.03em; white-space:nowrap;"> <span class="legend-value" style="font-weight:400; color:#374151; opacity:0.8;">${i.mm} mm</span></div>`;
+                                        return `<div class="legend-label-row" style="position:absolute; top:${percent}%; left:0; transform:translateY(-50%); font-size:9.1px; line-height:1; letter-spacing:-0.03em; white-space:nowrap;"> <span class="legend-value" style="font-weight:400; color:#374151; opacity:0.8;">${i.mm}</span></div>`;
+                                    }).join('')}
+                                </div>
+                            </div>
+                        </div>
+                        <div class="legend-wind-column" style="flex:1; min-width:0; position:relative;">
+                            <div class="legend-subtitle legend-vertical-title">Wiatr [km/h]:</div>
+                            <div class="legend-body" style="display:flex; align-items:stretch; height: ${windHeight}px; position:relative; padding-left:18px;">
+                                <div class="legend-bar" style="width: 6px; margin-right: 6px; border: 1px solid #999; background: linear-gradient(to bottom, ${windReversedScale.map(i => `rgb(${i.r},${i.g},${i.b})`).join(', ')}); position: relative;">
+                                    <div style="position:absolute; top:0; left:0; width:100%; height:100%; pointer-events:none;">
+                                        ${windReversedScale.map((i, idx) => {
+                                            const percent = (idx / (windReversedScale.length - 1)) * 100;
+                                            return `<div style="position:absolute; top:${percent}%; left:50%; width:10px; height:1px; background:#aaa; opacity:0.7; transform:translate(-50%, -50%);"></div>`;
+                                        }).join('')}
+                                    </div>
+                                </div>
+                                <div class="legend-labels" style="position:relative; flex:1; min-width:0;">
+                                    ${windReversedScale.map((i, idx) => {
+                                        const percent = (idx / (windReversedScale.length - 1)) * 100;
+                                        return `<div class="legend-label-row" style="position:absolute; top:${percent}%; left:0; transform:translateY(-50%); font-size:9.1px; line-height:1; letter-spacing:-0.03em; white-space:nowrap;"> <span class="legend-value" style="font-weight:400; color:#374151; opacity:0.8;">${i.kmh}</span></div>`;
                                     }).join('')}
                                 </div>
                             </div>
