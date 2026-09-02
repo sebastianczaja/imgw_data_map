@@ -354,7 +354,7 @@ function buildRankingsControl() {
                     <div class="ranking-table-wrap"><table><tbody data-ranking="precipitation"></tbody></table></div>
                 </section>
                 <section class="ranking-section">
-                    <h3>Największe dobowe prędkości wiatru:</h3>
+                    <h3>Najwyższe dobowe prędkości wiatru:</h3>
                     <div class="ranking-table-wrap"><table><tbody data-ranking="wind"></tbody></table></div>
                 </section>
             </div>
