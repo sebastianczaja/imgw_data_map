@@ -36,8 +36,6 @@ map.whenReady(() => {
     }, 60);
 });
 
-L.control.zoom({ position: 'topright' }).addTo(map);
-
 // layer groups
 const etykietyTa = L.layerGroup();
 const etykietyTmin = L.layerGroup();
@@ -167,7 +165,7 @@ function addDataToParamGroup(rawValue, suffix, className, positionClass, latlng,
             const labelColor = isTemperatureLayer
                 ? getTemperatureStyle(rawValue).bg
                 : getLabelScaleColor(rawValue, isPrecipitationLayer ? precipLabelScale : windLabelScale);
-            const textColor = getContrastTextColor(labelColor);
+            const textColor = '#000000';
             tooltipContent = `<div style="background: ${labelColor} !important; color: ${textColor} !important; text-shadow: none; border: ${borderStyle} !important; width: 100%; height: 100%; display: inline-flex; align-items: center; justify-content: center; margin: -1px -2px; padding: 0 2px; border-radius: 2px;">${formatted}${suffix}</div>`;
         } else {
             tooltipContent = `${formatted}${suffix}`;
@@ -184,6 +182,7 @@ function clearMapData() {
 }
 
 let layersControl = null;
+let rankingsControl = null;
 
 function getLastAvailableHourFromData(data) {
     if (!data || !Array.isArray(data.features)) return 23;
@@ -222,6 +221,7 @@ function processData(data) {
 
 function renderDataForHour(hourStr) {
     clearMapData();
+    updateRankingsPanel(hourStr);
     if (!globalGeoJsonData) return;
 
     let extremes = { Ta: { min: Infinity, max: -Infinity }, Tmin: { min: Infinity, max: -Infinity }, Tmax: { min: Infinity, max: -Infinity }, Tmin_hour: { min: Infinity, max: -Infinity }, Tmax_hour: { min: Infinity, max: -Infinity }, Tg: { min: Infinity, max: -Infinity }, Wind_avg: { min: Infinity, max: -Infinity }, Wind_max: { min: Infinity, max: -Infinity }, Precip_24h: { max: -Infinity }, Precip_10min: { max: -Infinity } };
@@ -321,6 +321,111 @@ function renderDataForHour(hourStr) {
 
     map.on('layeradd layerremove', updateLegendVisibility);
     updateLegendVisibility();
+}
+
+function escapeHtml(value) {
+    return String(value ?? '').replace(/[&<>'"]/g, character => ({
+        '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;'
+    }[character]));
+}
+
+function buildRankingsControl() {
+    if (rankingsControl) return;
+
+    rankingsControl = L.control({ position: 'topright' });
+    rankingsControl.onAdd = function () {
+        const div = L.DomUtil.create('div', 'leaflet-control compact-panel rankings-control');
+        div.innerHTML = `
+            <div class="panel-global-header rankings-header">
+                <div class="panel-main-title">Dane</div>
+                <button type="button" class="panel-toggle-btn rankings-toggle" aria-label="Zwiń rankingi" title="Zwiń rankingi">▾</button>
+            </div>
+            <div class="rankings-content">
+                <section class="ranking-section">
+                    <h3>Najwyższe temperatury:</h3>
+                    <div class="ranking-table-wrap"><table><tbody data-ranking="highest-temperature"></tbody></table></div>
+                </section>
+                <section class="ranking-section">
+                    <h3>Najniższe temperatury:</h3>
+                    <div class="ranking-table-wrap"><table><tbody data-ranking="lowest-temperature"></tbody></table></div>
+                </section>
+                <section class="ranking-section">
+                    <h3>Najwyższe dobowe sumy opadów:</h3>
+                    <div class="ranking-table-wrap"><table><tbody data-ranking="precipitation"></tbody></table></div>
+                </section>
+                <section class="ranking-section">
+                    <h3>Największe dobowe prędkości wiatru:</h3>
+                    <div class="ranking-table-wrap"><table><tbody data-ranking="wind"></tbody></table></div>
+                </section>
+            </div>
+        `;
+
+        const toggle = div.querySelector('.rankings-toggle');
+        toggle.addEventListener('click', () => {
+            const collapsed = div.classList.toggle('collapsed');
+            toggle.textContent = collapsed ? '◂' : '▸';
+            toggle.setAttribute('aria-label', collapsed ? 'Pokaż rankingi' : 'Zwiń rankingi');
+            toggle.setAttribute('title', collapsed ? 'Pokaż rankingi' : 'Zwiń rankingi');
+        });
+
+        L.DomEvent.disableClickPropagation(div);
+        L.DomEvent.disableScrollPropagation(div);
+        return div;
+    };
+    rankingsControl.addTo(map);
+}
+
+function updateRankingsPanel(hourStr) {
+    if (!rankingsControl) buildRankingsControl();
+    const container = rankingsControl.getContainer();
+    if (!container) return;
+
+    const entries = [];
+    if (globalGeoJsonData && Array.isArray(globalGeoJsonData.features)) {
+        globalGeoJsonData.features.forEach(feature => {
+            const props = feature && feature.properties;
+            if (!props || props.Status !== 'ACTIVE') return;
+            const hourlyData = props.Hourly && props.Hourly[hourStr];
+            const temperature = hourlyData && hourlyData.Ta !== undefined ? Number(hourlyData.Ta) : null;
+            const precipitation = props.Precip_24h !== undefined && props.Precip_24h !== null ? Number(props.Precip_24h) : null;
+            const wind = props.Wind_max !== undefined && props.Wind_max !== null ? Number(convertMetersPerSecondToKilometersPerHour(props.Wind_max)) : null;
+            const station = props.Station_name || props.Station_id || 'Brak nazwy';
+            entries.push({ station, temperature, precipitation, wind });
+        });
+    }
+
+    const sortValues = (key, direction) => entries
+        .filter(entry => entry[key] !== null && Number.isFinite(entry[key]))
+        .sort((first, second) => direction * (second[key] - first[key]))
+        .slice(0, 10);
+    const rankings = {
+        'highest-temperature': { values: sortValues('temperature', 1), unit: '°C', key: 'temperature', highlight: true },
+        'lowest-temperature': { values: sortValues('temperature', -1).sort((first, second) => second.temperature - first.temperature), unit: '°C', key: 'temperature', highlightLowest: true },
+        precipitation: { values: sortValues('precipitation', 1), unit: 'mm', key: 'precipitation', highlight: true },
+        wind: { values: sortValues('wind', 1), unit: 'km/h', key: 'wind', highlight: true }
+    };
+
+    Object.entries(rankings).forEach(([name, ranking]) => {
+        const body = container.querySelector(`[data-ranking="${name}"]`);
+        if (!body) return;
+        const boundaryValue = ranking.highlight
+            ? ranking.values[0]?.[ranking.key]
+            : ranking.highlightLowest
+                ? ranking.values[ranking.values.length - 1]?.[ranking.key]
+                : null;
+        body.innerHTML = ranking.values.length
+            ? ranking.values.map(entry => {
+                const isBoundaryValue = boundaryValue !== null && entry[ranking.key] === boundaryValue;
+                const highlightClass = ranking.highlight && isBoundaryValue
+                    ? ' ranking-value-highlight'
+                    : ranking.highlightLowest && isBoundaryValue
+                        ? ' ranking-value-lowest-highlight'
+                        : '';
+                const unitSpacing = ranking.unit === '°C' ? '' : ' ';
+                return `<tr><td class="ranking-value${highlightClass}">${formatValue(entry[ranking.key], 1)}${unitSpacing}${ranking.unit}</td><td class="ranking-station${highlightClass}">${escapeHtml(entry.station)}</td></tr>`;
+            }).join('')
+            : '<tr><td class="ranking-empty" colspan="2">Brak danych</td></tr>';
+    });
 }
 
 function showNoDataState(dateStr) {
