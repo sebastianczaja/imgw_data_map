@@ -611,25 +611,26 @@
             border: 1px solid var(--input-border);
             background: var(--input-bg);
             color: var(--text-main);
-            padding: 0 3px;
+            padding: 0 32px 0 3px;
             border-radius: 4px;
             font-family: Arial, sans-serif;
             font-size: 10.5px;
             outline: none;
             height: 20px;
-            min-width: 80px;
-            width: 80px;
+            min-width: 95px;
+            width: 95px;
             box-sizing: border-box;
             text-align: center;
             display: block;
             cursor: pointer;
             margin-left: 5px;
-            margin-right: 18px;
+            margin-right: 10px;
         }
         .timeline-controls input[type="date"]::-webkit-calendar-picker-indicator {
             filter: invert(0.8) brightness(1.2);
             opacity: 0.9;
             cursor: pointer;
+            margin-right: -22px;
         }
         .timeline-controls input[type="date"]::-webkit-clear-button {
             display: none;
@@ -738,8 +739,8 @@
         .timeline-slider::-webkit-slider-thumb {
             -webkit-appearance: none;
             appearance: none;
-            width: 13px;
-            height: 13px;
+            width: 10px;
+            height: 10px;
             border-radius: 50%;
             background: var(--slider-accent, #7d8086);
             cursor: pointer;
@@ -747,7 +748,7 @@
             box-shadow: 0 1px 3px rgba(0,0,0,0.25);
             transition: background 0.15s ease;
         }
-        .timeline-slider::-moz-range-thumb { width:13px; height:13px; border-radius:50%; background:var(--slider-accent, #7d8086); border:2px solid #fff; }
+        .timeline-slider::-moz-range-thumb { width:10px; height:10px; border-radius:50%; background:var(--slider-accent, #7d8086); border:2px solid #fff; }
         .timeline-ticks { display:flex; justify-content:space-between; padding:0 2px; margin-top: 2px; }
         .timeline-tick-label { font-size:9px; color: var(--text-muted); position:relative; text-align:center; user-select:none; line-height:1.1; transform: translateY(2px); }
         body.dark-theme #opacityVal {
