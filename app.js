@@ -676,6 +676,20 @@ function initTimelineUI() {
             const hourStr = String(val).padStart(2, '0');
             renderDataForHour(hourStr);
         });
+
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'ArrowLeft') {
+                e.preventDefault();
+                const newVal = Math.max(0, parseInt(hourSlider.value) - 1);
+                hourSlider.value = newVal;
+                hourSlider.dispatchEvent(new Event('input'));
+            } else if (e.key === 'ArrowRight') {
+                e.preventDefault();
+                const newVal = Math.min(23, parseInt(hourSlider.value) + 1);
+                hourSlider.value = newVal;
+                hourSlider.dispatchEvent(new Event('input'));
+            }
+        });
     }
 
     if (datePicker) {
