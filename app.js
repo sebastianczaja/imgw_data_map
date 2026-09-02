@@ -95,6 +95,28 @@ const tempScale = [
     { t: 35,  r: 180, g: 25,  b: 45  }, { t: 40,  r: 245, g: 150, b: 180 }, { t: 45, r: 249, g: 198, b: 205 }, { t: 50, r: 255, g: 255, b: 255 }
 ];
 
+const precipLabelScale = [[0, 255, 255, 255], [10, 170, 214, 255], [20, 120, 185, 255], [30, 70, 110, 220], [40, 48, 80, 180], [50, 120, 90, 200], [60, 170, 120, 210], [70, 220, 120, 170], [80, 240, 150, 180], [90, 245, 175, 190], [100, 200, 170, 170], [110, 190, 170, 170], [120, 180, 170, 170], [130, 190, 190, 190], [140, 200, 200, 200], [150, 215, 215, 215], [160, 225, 225, 225], [170, 235, 235, 235], [180, 240, 240, 240], [190, 248, 248, 248], [200, 255, 255, 255]];
+const windLabelScale = [[0, 255, 255, 255], [10, 197, 213, 224], [20, 79, 145, 200], [30, 61, 175, 160], [40, 84, 174, 88], [50, 143, 214, 163], [60, 241, 220, 69], [70, 243, 154, 54], [80, 216, 107, 38], [90, 222, 55, 61], [100, 151, 27, 40], [110, 93, 16, 28], [120, 116, 29, 49], [130, 132, 62, 76], [140, 148, 96, 106], [150, 163, 126, 133], [160, 178, 153, 158], [170, 193, 177, 181], [180, 208, 199, 201], [190, 227, 223, 224], [200, 245, 245, 245]];
+
+function getLabelScaleColor(value, scale) {
+    const numericValue = Number(value);
+    if (!Number.isFinite(numericValue)) return 'rgba(230, 233, 234, 0.98)';
+    if (numericValue <= scale[0][0]) return `rgba(${scale[0][1]}, ${scale[0][2]}, ${scale[0][3]}, 0.98)`;
+    if (numericValue >= scale[scale.length - 1][0]) {
+        const last = scale[scale.length - 1];
+        return `rgba(${last[1]}, ${last[2]}, ${last[3]}, 0.98)`;
+    }
+    for (let index = 0; index < scale.length - 1; index++) {
+        const lower = scale[index];
+        const upper = scale[index + 1];
+        if (numericValue >= lower[0] && numericValue <= upper[0]) {
+            const fraction = (numericValue - lower[0]) / (upper[0] - lower[0]);
+            return `rgba(${Math.round(lower[1] + fraction * (upper[1] - lower[1]))}, ${Math.round(lower[2] + fraction * (upper[2] - lower[2]))}, ${Math.round(lower[3] + fraction * (upper[3] - lower[3]))}, 0.98)`;
+        }
+    }
+    return 'rgba(230, 233, 234, 0.98)';
+}
+
 function getTemperatureStyle(temp) {
     let t = parseFloat(temp);
     if (isNaN(t)) return { bg: 'rgba(230, 233, 234, 0.98)' };
@@ -123,14 +145,18 @@ function addDataToParamGroup(rawValue, suffix, className, positionClass, latlng,
 
         const fullClassName = 'stacja-etykieta ' + className + ' ' + positionClass + extraClass;
         const isTemperatureLayer = ['temp-aktualna', 'temp-min', 'temp-min-hour', 'temp-max', 'temp-max-hour', 'temp-grunt'].includes(className);
+        const isPrecipitationLayer = ['opad-dobowy', 'opad-10min'].includes(className);
+        const isWindLayer = ['wiatr-avg', 'wiatr-max'].includes(className);
 
         let tooltipContent;
-        if (isTemperatureLayer) {
+        if (isTemperatureLayer || isPrecipitationLayer || isWindLayer) {
             let borderStyle = '1px solid #666';
             if (extremeType === 'max') borderStyle = '2px solid #ff0000';
             if (extremeType === 'min') borderStyle = '2px solid #0000ff';
-            const tStyle = getTemperatureStyle(rawValue);
-            tooltipContent = `<div style="background: ${tStyle.bg} !important; border: ${borderStyle} !important; width: 100%; height: 100%; display: inline-flex; align-items: center; justify-content: center; margin: -1px -3px; padding: 1px 3px; border-radius: 2px;">${formatted}${suffix}</div>`;
+            const labelColor = isTemperatureLayer
+                ? getTemperatureStyle(rawValue).bg
+                : getLabelScaleColor(rawValue, isPrecipitationLayer ? precipLabelScale : windLabelScale);
+            tooltipContent = `<div style="background: ${labelColor} !important; border: ${borderStyle} !important; width: 100%; height: 100%; display: inline-flex; align-items: center; justify-content: center; margin: -1px -3px; padding: 1px 3px; border-radius: 2px;">${formatted}${suffix}</div>`;
         } else {
             tooltipContent = `${formatted}${suffix}`;
         }
@@ -667,6 +693,19 @@ function initTimelineUI() {
                 const newVal = Math.min(23, parseInt(hourSlider.value) + 1);
                 hourSlider.value = newVal;
                 hourSlider.dispatchEvent(new Event('input'));
+            } else if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
+                e.preventDefault();
+                if (!datePicker || !datePicker.value) return;
+                const [year, month, day] = datePicker.value.split('-').map(Number);
+                const selectedDate = new Date(year, month - 1, day);
+                selectedDate.setDate(selectedDate.getDate() + (e.key === 'ArrowUp' ? 1 : -1));
+                const nextDate = [
+                    selectedDate.getFullYear(),
+                    String(selectedDate.getMonth() + 1).padStart(2, '0'),
+                    String(selectedDate.getDate()).padStart(2, '0')
+                ].join('-');
+                datePicker.value = nextDate;
+                datePicker.dispatchEvent(new Event('change'));
             }
         });
     }
