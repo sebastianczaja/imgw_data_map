@@ -183,6 +183,157 @@
             max-width: 100%;
             padding-right: 2px;
         }
+        .main-control-panel {
+            width: 260px;
+            max-width: 260px;
+            height: 100%;
+            max-height: 100%;
+            min-height: 100%;
+            box-sizing: border-box;
+            overflow-y: auto;
+            margin: 0 !important;
+            padding: 8px 10px 8px 10px !important;
+            border-radius: 0 6px 6px 0;
+            box-shadow: 0 2px 6px var(--shadow);
+            background: var(--panel-bg);
+            color: var(--text-main);
+        }
+        .main-control-panel .panel-section {
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+            padding: 0 0 14px 0;
+            margin: 0 0 12px 0;
+            border-bottom: 2px solid var(--header-border);
+        }
+        .main-control-panel .panel-section:last-child {
+            border-bottom: none;
+            padding-bottom: 0;
+            margin-bottom: 0;
+        }
+        .main-control-panel .panel-header {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            width: 100%;
+            margin: 0;
+            padding: 0 0 4px 0;
+            border-bottom: none !important;
+        }
+        .main-control-panel .panel-global-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            width: 100%;
+            min-height: 30px;
+            margin: 0 0 10px 0;
+            padding: 0 0 7px 0;
+            border-bottom: 2px solid var(--header-border);
+        }
+        .main-control-panel .panel-main-title {
+            font-size: 14px;
+            font-weight: 700;
+            line-height: 1.2;
+            color: var(--text-main);
+            letter-spacing: 0;
+        }
+        .main-control-panel .panel-global-toggle {
+            margin: 0;
+        }
+        .main-control-panel .basemap-body,
+        .main-control-panel .panel-body {
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+            width: 100%;
+            padding: 0;
+            margin: 0;
+        }
+        .main-control-panel .basemap-body {
+            margin-bottom: 12px;
+        }
+        .main-control-panel .basemap-body label,
+        .main-control-panel .panel-body label,
+        .main-control-panel .leaflet-control-layers-overlays-label {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            font-size: 11px;
+            line-height: 1.3;
+            margin: 0;
+            color: var(--text-main);
+            white-space: nowrap;
+        }
+        .main-control-panel .basemap-body input[type="radio"],
+        .main-control-panel .panel-body input[type="checkbox"] {
+            margin: 0;
+            flex-shrink: 0;
+        }
+        .main-control-panel .basemap-footer {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            width: 100%;
+            padding-top: 4px;
+        }
+        .main-control-panel .basemap-range-group {
+            display: flex;
+            flex-direction: column;
+            gap: 2px;
+            width: 100%;
+        }
+        .main-control-panel .basemap-range-group label {
+            display: block;
+            font-size: 10.5px;
+            font-weight: 700;
+            color: var(--text-main);
+            margin: 0;
+            line-height: 1.2;
+        }
+        .main-control-panel input[type="range"] {
+            -webkit-appearance: none;
+            appearance: none;
+            width: 100%;
+            max-width: 238px;
+            height: 4px;
+            border-radius: 999px;
+            background: linear-gradient(to right, rgba(125, 128, 134, 0.18), var(--timeline-line));
+            outline: none;
+            margin: 6px 0 4px;
+            cursor: pointer;
+        }
+        .main-control-panel input[type="range"]::-webkit-slider-runnable-track {
+            height: 4px;
+            border-radius: 999px;
+            background: linear-gradient(to right, rgba(125, 128, 134, 0.18), var(--timeline-line));
+        }
+        .main-control-panel input[type="range"]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            appearance: none;
+            width: 10px;
+            height: 10px;
+            margin-top: -3px;
+            border-radius: 50%;
+            background: var(--slider-accent, #7d8086);
+            cursor: pointer;
+            border: 2px solid #fff;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.25);
+            transition: background 0.15s ease;
+        }
+        .main-control-panel input[type="range"]::-moz-range-track {
+            height: 4px;
+            border: none;
+            border-radius: 999px;
+            background: linear-gradient(to right, rgba(125, 128, 134, 0.18), var(--timeline-line));
+        }
+        .main-control-panel input[type="range"]::-moz-range-thumb {
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            background: var(--slider-accent, #7d8086);
+            border: 2px solid #fff;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.25);
+        }
         .map-legend-container {
             width: 210px;
             max-width: 210px;
@@ -199,6 +350,9 @@
         }
         .map-legend-container .legend-subtitle {
             color: var(--legend-subtitle);
+        }
+        .main-control-panel .legend-temperature-column {
+            margin-left: 8px;
         }
         .map-legend-container .panel-header {
             display: flex;
@@ -251,6 +405,33 @@
             gap: 6px;
             width: max-content;
         }
+        .main-control-panel.collapsed {
+            width: 40px !important;
+            min-width: 40px !important;
+            max-width: 40px !important;
+            height: auto !important;
+            min-height: 0 !important;
+            max-height: none !important;
+            overflow: visible !important;
+            padding: 8px !important;
+            border-radius: 0 6px 6px 0;
+        }
+        .main-control-panel.collapsed .panel-global-header {
+            width: 24px;
+            min-height: 24px;
+            margin: 0;
+            padding: 0;
+            border-bottom: none;
+        }
+        .main-control-panel.collapsed .panel-main-title {
+            display: none;
+        }
+        .main-control-panel.collapsed .panel-section {
+            display: none !important;
+        }
+        .main-control-panel.collapsed .panel-global-toggle {
+            display: inline-flex !important;
+        }
         .map-legend-container.compact-panel.collapsed {
             width: auto !important;
             max-width: max-content !important;
@@ -276,6 +457,8 @@
             left: 0 !important;
             margin-left: 0 !important;
             top: 0 !important;
+            bottom: 0 !important;
+            height: 100% !important;
             display: flex !important;
             flex-direction: column !important;
             align-items: flex-start !important;
@@ -335,6 +518,48 @@
         }
         .leaflet-control-layers input[type="checkbox"] {
             margin: 0;
+        }
+        .custom-basemap-control {
+            width: 220px;
+            max-width: 220px;
+            font-size: 12px;
+            box-sizing: border-box;
+            background: var(--panel-bg);
+            color: var(--text-main);
+            padding-left: 0 !important;
+        }
+        body.dark-theme .custom-basemap-control {
+            background: var(--panel-bg) !important;
+            color: var(--text-main) !important;
+        }
+        .custom-basemap-control .panel-header,
+        .custom-basemap-control .basemap-body,
+        .custom-basemap-control .basemap-footer {
+            padding-left: 8px !important;
+            box-sizing: border-box;
+        }
+        .custom-basemap-control .basemap-body,
+        .custom-basemap-control .basemap-footer {
+            white-space: normal;
+        }
+        .custom-basemap-control .basemap-body {
+            margin-top: 8px;
+            margin-bottom: 6px;
+            padding-bottom: 6px;
+            border-bottom: 1px solid var(--header-border);
+            display: flex;
+            flex-direction: column;
+            gap: 1px;
+        }
+        .custom-basemap-control .basemap-footer {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+        .custom-basemap-control .basemap-range-group {
+            display: flex;
+            flex-direction: column;
+            gap: 2px;
         }
         .custom-basemap-control {
             width: 220px;

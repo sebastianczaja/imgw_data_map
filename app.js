@@ -278,48 +278,7 @@ function renderDataForHour(hourStr) {
     };
 
     if (!layersControl) {
-        layersControl = L.control.layers(null, overlayMaps, { position: 'topleft', collapsed: false }).addTo(map);
-        const root = layersControl.getContainer();
-        if (root && !root.dataset.compactReady) {
-            root.dataset.compactReady = 'true';
-            root.classList.add('compact-panel');
-
-            const header = document.createElement('div');
-            header.className = 'panel-header';
-
-            const toggle = document.createElement('button');
-            toggle.type = 'button';
-            toggle.className = 'panel-toggle-btn';
-            toggle.title = 'Zwiń/rozwiń okno parametrów';
-            toggle.setAttribute('aria-label', 'Zwiń/rozwiń okno parametrów');
-            toggle.textContent = '▾';
-
-            const title = document.createElement('div');
-            title.className = 'panel-title';
-            title.textContent = 'Parametry:';
-
-            header.appendChild(toggle);
-            header.appendChild(title);
-
-            const list = root.querySelector('.leaflet-control-layers-list');
-            if (list) {
-                root.insertBefore(header, list);
-                list.classList.add('panel-body');
-            } else {
-                root.insertBefore(header, root.firstChild);
-            }
-
-            toggle.addEventListener('click', () => {
-                const collapsed = root.classList.toggle('collapsed');
-                toggle.textContent = collapsed ? '▸' : '▾';
-            });
-        }
-
-        setTimeout(() => {
-            document.querySelectorAll('.leaflet-control-layers-overlays label').forEach(label => {
-                if (label.innerHTML.includes('leaflet-menu-section-title')) { const cb = label.querySelector('input'); if (cb) cb.remove(); }
-            });
-        }, 200);
+        buildUnifiedLayerControl();
     }
 
     map.on('layeradd layerremove', updateLegendVisibility);
@@ -362,241 +321,222 @@ function loadDataForDate(dateStr) {
     });
 }
 
-const baseMapControl = L.control({ position: 'topleft' });
-baseMapControl.onAdd = function() {
-    const div = L.DomUtil.create('div', 'leaflet-control-layers leaflet-control-layers-expanded custom-basemap-control compact-panel');
+function buildUnifiedLayerControl() {
+    const overlayMaps = {
+        "Nazwa stacji (Station_name)": etykietyStationName,
+        "Wysokość (Elevation)": etykietyElevation,
+        "Temperatura aktualna (Ta)": etykietyTa,
+        "Temperatura minimalna (Tmin)": etykietyTmin,
+        "Temperatura maksymalna (Tmax)": etykietyTmax,
+        "Temperatura min. godzinowa (Tmin_hour)": etykietyTminHour,
+        "Temperatura max. godzinowa (Tmax_hour)": etykietyTmaxHour,
+        "Temperatura przy gruncie (Tg)": etykietyTg,
+        "Suma opadów (Precip_24h)": etykietyOpady24h,
+        "Opad wybranej godziny (Precip_hour)": etykietyOpady10min,
+        "Średni wiatr (Wind_avg)": etykietyWindAvg,
+        "Porywy wiatru (Wind_max)": etykietyWindMax
+    };
 
-    div.innerHTML = `
-        <div class="panel-header">
-            <button type="button" class="panel-toggle-btn" aria-label="Zwiń/rozwiń okno podkładu" title="Zwiń/rozwiń okno podkładu">▾</button>
-            <div class="panel-title">Podkład mapy:</div>
-        </div>
-        <div class="basemap-body">
-            <label><input type="radio" name="customBaseLayer" value="osm">Standardowy (OSM)</label>
-            <label><input type="radio" name="customBaseLayer" value="esri">Satelita (Esri)</label>
-            <label><input type="radio" name="customBaseLayer" value="carto">Ciemny (CartoDB)</label>
-            <label><input type="radio" name="customBaseLayer" value="topo" checked>Topograficzny</label>
-        </div>
-        <div class="basemap-footer">
-            <div class="basemap-range-group">
-                <label for="opacitySlider">
-                    Widoczność podkładu: <span id="opacityVal" style="font-size: inherit; font-weight:700; color: var(--slider-accent-strong, #4d4f52); margin-left:2px;">100%</span>
-                </label>
-                <input type="range" id="opacitySlider" min="0" max="1" step="0.1" value="1" style="width: 100%; display: block; margin: 0; cursor: pointer;">
-            </div>
-            <div class="basemap-range-group basemap-range-group--zoom">
-                <label for="zoomSlider">
-                    Powiększenie mapy: <span id="zoomVal" style="font-weight:700; color: var(--slider-accent-strong, #4d4f52); margin-left:2px;">6.7x</span>
-                </label>
-                <input type="range" id="zoomSlider" min="4" max="18" step="0.1" value="6.7" style="width: 100%; display: block; margin: 0; cursor: pointer;">
-            </div>
-        </div>
-    `;
+    layersControl = L.control({ position: 'topleft' });
+    layersControl.onAdd = function () {
+        const div = L.DomUtil.create('div', 'leaflet-control compact-panel main-control-panel');
+        const reversedScale = [...tempScale].reverse();
+        const precipLegendScale = [
+            { mm: 0, r: 255, g: 255, b: 255 },
+            { mm: 10, r: 170, g: 214, b: 255 },
+            { mm: 20, r: 120, g: 185, b: 255 },
+            { mm: 30, r: 70, g: 110, b: 220 },
+            { mm: 40, r: 48, g: 80, b: 180 },
+            { mm: 50, r: 120, g: 90, b: 200 },
+            { mm: 60, r: 170, g: 120, b: 210 },
+            { mm: 70, r: 220, g: 120, b: 170 },
+            { mm: 80, r: 240, g: 150, b: 180 },
+            { mm: 90, r: 245, g: 175, b: 190 },
+            { mm: 100, r: 200, g: 170, b: 170 },
+            { mm: 110, r: 190, g: 170, b: 170 },
+            { mm: 120, r: 180, g: 170, b: 170 },
+            { mm: 130, r: 190, g: 190, b: 190 },
+            { mm: 140, r: 200, g: 200, b: 200 },
+            { mm: 150, r: 215, g: 215, b: 215 },
+            { mm: 160, r: 225, g: 225, b: 225 },
+            { mm: 170, r: 235, g: 235, b: 235 },
+            { mm: 180, r: 240, g: 240, b: 240 },
+            { mm: 190, r: 248, g: 248, b: 248 },
+            { mm: 200, r: 255, g: 255, b: 255 }
+        ];
+        const precipReversedScale = [...precipLegendScale].reverse();
+        const tempHeight = 220;
+        const precipHeight = 220;
 
-    const toggle = div.querySelector('.panel-toggle-btn');
-    if (toggle) {
-        toggle.addEventListener('click', () => {
-            const collapsed = div.classList.toggle('collapsed');
-            toggle.textContent = collapsed ? '▸' : '▾';
+        div.innerHTML = `
+            <div class="panel-global-header">
+                <div class="panel-main-title">Ustawienia</div>
+                <button type="button" class="panel-toggle-btn panel-global-toggle" aria-label="Zwiń okno" title="Zwiń okno">▾</button>
+            </div>
+            <div class="panel-section">
+                <div class="panel-header">
+                    <div class="panel-title">Podkład mapy:</div>
+                </div>
+                <div class="basemap-body">
+                    <label><input type="radio" name="customBaseLayer" value="osm">Standardowy (OSM)</label>
+                    <label><input type="radio" name="customBaseLayer" value="esri">Satelita (Esri)</label>
+                    <label><input type="radio" name="customBaseLayer" value="carto">Ciemny (CartoDB)</label>
+                    <label><input type="radio" name="customBaseLayer" value="topo" checked>Topograficzny</label>
+                </div>
+                <div class="basemap-footer">
+                    <div class="basemap-range-group">
+                        <label for="opacitySlider">Widoczność podkładu: <span id="opacityVal">100%</span></label>
+                        <input type="range" id="opacitySlider" min="0" max="1" step="0.1" value="1">
+                    </div>
+                    <div class="basemap-range-group basemap-range-group--zoom">
+                        <label for="zoomSlider">Powiększenie mapy: <span id="zoomVal">6.7x</span></label>
+                        <input type="range" id="zoomSlider" min="4" max="18" step="0.1" value="6.7">
+                    </div>
+                </div>
+            </div>
+
+            <div class="panel-section parameters-section">
+                <div class="panel-header">
+                    <div class="panel-title">Parametry:</div>
+                </div>
+                <div class="panel-body leaflet-control-layers-list" id="unified-parameter-list"></div>
+            </div>
+
+            <div class="panel-section legend-section">
+                <div class="panel-header">
+                    <div class="panel-title">Legenda:</div>
+                </div>
+                <div class="map-legend-container" style="width:auto; max-width:none; min-width:0; padding:8px 0 0 0; margin:0; background:transparent; box-shadow:none; border-radius:0;">
+                    <div style="display:flex; align-items:flex-start; gap:4px; padding-bottom: 12px; margin-bottom: 0;">
+                        <div class="legend-temperature-column" style="flex:1; min-width:0;">
+                            <div class="legend-subtitle" style="font-size:10px; color:#374151; font-weight:700; margin: 1px 0 10px 0;">Temperatura:</div>
+                            <div class="legend-body" style="display:flex; align-items:stretch; height: ${tempHeight}px; position:relative;">
+                                <div class="legend-bar" style="width: 6px; margin-right: 6px; border: 1px solid #999; background: linear-gradient(to bottom, ${reversedScale.map(i => `rgb(${i.r},${i.g},${i.b})`).join(', ')}); position: relative;">
+                                    <div style="position:absolute; top:0; left:0; width:100%; height:100%; pointer-events:none;">
+                                        ${reversedScale.map((i, idx) => {
+                                            const percent = (idx / (reversedScale.length - 1)) * 100;
+                                            return `<div style="position:absolute; top:${percent}%; left:50%; width:10px; height:1px; background:#aaa; opacity:0.7; transform:translate(-50%, -50%);"></div>`;
+                                        }).join('')}
+                                    </div>
+                                </div>
+                                <div class="legend-labels" style="position:relative; flex:1; min-width:0;">
+                                    ${reversedScale.map((i, idx) => {
+                                        const percent = (idx / (reversedScale.length - 1)) * 100;
+                                        return `<div class="legend-label-row" style="position:absolute; top:${percent}%; left:0; transform:translateY(-50%); font-size:9.1px; line-height:1; letter-spacing:-0.03em; white-space:nowrap;"> <span class="legend-value" style="font-weight:400; color:#374151; opacity:0.8;">${i.t}°C</span></div>`;
+                                    }).join('')}
+                                </div>
+                            </div>
+                        </div>
+                        <div style="flex:1; min-width:0;">
+                            <div class="legend-subtitle" style="font-size:10px; color:#374151; font-weight:700; margin: 1px 0 10px 0;">Opady:</div>
+                            <div class="legend-body" style="display:flex; align-items:stretch; height: ${precipHeight}px; position:relative;">
+                                <div class="legend-bar" style="width: 6px; margin-right: 6px; border: 1px solid #999; background: linear-gradient(to bottom, ${precipReversedScale.map(i => `rgb(${i.r},${i.g},${i.b})`).join(', ')}); position: relative;">
+                                    <div style="position:absolute; top:0; left:0; width:100%; height:100%; pointer-events:none;">
+                                        ${precipReversedScale.map((i, idx) => {
+                                            const percent = (idx / (precipReversedScale.length - 1)) * 100;
+                                            return `<div style="position:absolute; top:${percent}%; left:50%; width:10px; height:1px; background:#aaa; opacity:0.7; transform:translate(-50%, -50%);"></div>`;
+                                        }).join('')}
+                                    </div>
+                                </div>
+                                <div class="legend-labels" style="position:relative; flex:1; min-width:0;">
+                                    ${precipReversedScale.map((i, idx) => {
+                                        const percent = (idx / (precipReversedScale.length - 1)) * 100;
+                                        return `<div class="legend-label-row" style="position:absolute; top:${percent}%; left:0; transform:translateY(-50%); font-size:9.1px; line-height:1; letter-spacing:-0.03em; white-space:nowrap;"> <span class="legend-value" style="font-weight:400; color:#374151; opacity:0.8;">${i.mm} mm</span></div>`;
+                                    }).join('')}
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        `;
+
+        const parameterList = div.querySelector('#unified-parameter-list');
+        Object.entries(overlayMaps).forEach(([label, layerGroup]) => {
+            const row = document.createElement('label');
+            row.className = 'leaflet-control-layers-overlays-label';
+            const input = document.createElement('input');
+            input.type = 'checkbox';
+            input.checked = label === 'Temperatura aktualna (Ta)';
+            row.appendChild(input);
+            row.appendChild(document.createTextNode(label));
+            row.addEventListener('change', () => {
+                if (input.checked) {
+                    map.addLayer(layerGroup);
+                } else {
+                    map.removeLayer(layerGroup);
+                }
+                updateLegendVisibility();
+            });
+            parameterList.appendChild(row);
         });
-    }
 
-    L.DomEvent.disableClickPropagation(div); 
-    L.DomEvent.disableScrollPropagation(div);
-    
-    setTimeout(() => {
         const radios = div.querySelectorAll('input[name="customBaseLayer"]');
         const slider = div.querySelector('#opacitySlider');
         const valLabel = div.querySelector('#opacityVal');
         const zoomSlider = div.querySelector('#zoomSlider');
         const zoomValLabel = div.querySelector('#zoomVal');
-        
-        activeBaseLayer.setOpacity(0.9);
 
-        const syncZoomLabel = () => {
-            if (zoomSlider) {
-                zoomSlider.value = String(map.getZoom());
-            }
-            if (zoomValLabel) {
-                zoomValLabel.textContent = `${Number(map.getZoom()).toFixed(1)}x`;
-            }
-        };
-        
-        function updateLayer(selectedVal) {
-            map.removeLayer(activeBaseLayer);
-            if (selectedVal === 'osm') activeBaseLayer = osmLayer;
-            if (selectedVal === 'esri') activeBaseLayer = esriSatelite;
-            if (selectedVal === 'carto') activeBaseLayer = cartoDbDark;
-            if (selectedVal === 'topo') activeBaseLayer = openTopo;
-            
-            const currentOpacity = parseFloat(slider.value);
-            activeBaseLayer.setOpacity(currentOpacity);
-            map.addLayer(activeBaseLayer);
-            activeBaseLayer.bringToBack();
-        }
-        
         radios.forEach(radio => {
-            radio.addEventListener('change', function(e) {
-                updateLayer(e.target.value);
+            radio.addEventListener('change', function (e) {
+                map.removeLayer(activeBaseLayer);
+                const selectedVal = e.target.value;
+                if (selectedVal === 'osm') activeBaseLayer = osmLayer;
+                if (selectedVal === 'esri') activeBaseLayer = esriSatelite;
+                if (selectedVal === 'carto') activeBaseLayer = cartoDbDark;
+                if (selectedVal === 'topo') activeBaseLayer = openTopo;
+                const opacity = slider ? parseFloat(slider.value || '1') : 1;
+                activeBaseLayer.setOpacity(opacity);
+                map.addLayer(activeBaseLayer);
+                activeBaseLayer.bringToBack();
             });
         });
-        
+
         if (slider) {
-            slider.addEventListener('input', function(e) {
+            slider.addEventListener('input', function (e) {
                 const alpha = parseFloat(e.target.value);
-                if (activeBaseLayer && activeBaseLayer.setOpacity) {
-                    activeBaseLayer.setOpacity(alpha);
-                }
-                if (valLabel) {
-                    valLabel.textContent = Math.round(alpha * 100) + '%';
-                }
+                if (activeBaseLayer && activeBaseLayer.setOpacity) activeBaseLayer.setOpacity(alpha);
+                if (valLabel) valLabel.textContent = Math.round(alpha * 100) + '%';
             });
         }
 
         if (zoomSlider) {
-            zoomSlider.addEventListener('input', function(e) {
+            const syncZoomLabel = () => {
+                if (zoomSlider) zoomSlider.value = String(map.getZoom());
+                if (zoomValLabel) zoomValLabel.textContent = `${Number(map.getZoom()).toFixed(1)}x`;
+            };
+            zoomSlider.addEventListener('input', function (e) {
                 const nextZoom = parseFloat(e.target.value);
                 map.setZoom(nextZoom);
-                if (zoomValLabel) {
-                    zoomValLabel.textContent = `${nextZoom.toFixed(1)}x`;
-                }
+                if (zoomValLabel) zoomValLabel.textContent = `${nextZoom.toFixed(1)}x`;
             });
+            syncZoomLabel();
+            map.on('zoomend', syncZoomLabel);
         }
 
-        syncZoomLabel();
-        map.on('zoomend', syncZoomLabel);
-    }, 100);
-    
-    return div;
-};
-baseMapControl.addTo(map);
-
-const legendControl = L.control({ position: 'bottomleft' });
-legendControl.onAdd = function() {
-    const div = L.DomUtil.create('div', 'map-legend-container compact-panel');
-    const reversedScale = [...tempScale].reverse();
-    const stepsCount = reversedScale.length;
-    const stepPercent = 100 / stepsCount;
-
-    const precipLegendScale = [
-        { mm: 0, r: 255, g: 255, b: 255 },
-        { mm: 10, r: 170, g: 214, b: 255 },
-        { mm: 20, r: 120, g: 185, b: 255 },
-        { mm: 30, r: 70, g: 110, b: 220 },
-        { mm: 40, r: 48, g: 80, b: 180 },
-        { mm: 50, r: 120, g: 90, b: 200 },
-        { mm: 60, r: 170, g: 120, b: 210 },
-        { mm: 70, r: 220, g: 120, b: 170 },
-        { mm: 80, r: 240, g: 150, b: 180 },
-        { mm: 90, r: 245, g: 175, b: 190 },
-        { mm: 100, r: 200, g: 170, b: 170 },
-        { mm: 110, r: 190, g: 170, b: 170 },
-        { mm: 120, r: 180, g: 170, b: 170 },
-        { mm: 130, r: 190, g: 190, b: 190 },
-        { mm: 140, r: 200, g: 200, b: 200 },
-        { mm: 150, r: 215, g: 215, b: 215 },
-        { mm: 160, r: 225, g: 225, b: 225 },
-        { mm: 170, r: 235, g: 235, b: 235 },
-        { mm: 180, r: 240, g: 240, b: 240 },
-        { mm: 190, r: 248, g: 248, b: 248 },
-        { mm: 200, r: 255, g: 255, b: 255 }
-    ];
-    const precipReversedScale = [...precipLegendScale].reverse();
-    const precipStepsCount = precipReversedScale.length;
-    const precipStepPercent = 100 / precipStepsCount;
-    const precipHeight = 280;
-    const tempHeight = 280;
-
-    div.innerHTML = `
-        <div class="panel-header">
-            <button type="button" class="panel-toggle-btn" aria-label="Zwiń/rozwiń okno legendy" title="Zwiń/rozwiń okno legendy">▾</button>
-            <div class="panel-title">Legenda:</div>
-        </div>
-        <div style="display:flex; align-items:flex-start; gap:12px; padding-bottom: 12px; margin-bottom: 0;">
-            <div style="flex:1; min-width:0;">
-                <div class="legend-subtitle" style="font-size:10px; color:#374151; font-weight:700; margin: 1px 0 10px 0;">Temperatura:</div>
-                <div class="legend-body" style="display:flex; align-items:stretch; height: ${tempHeight}px; position:relative;">
-                    <div class="legend-bar" style="
-                        width: 6px;
-                        margin-right: 6px;
-                        border: 1px solid #999;
-                        background:
-                            linear-gradient(to bottom, ${reversedScale.map(i => `rgb(${i.r},${i.g},${i.b})`).join(', ')});
-                        position: relative;
-                    ">
-                        <div style="position:absolute; top:0; left:0; width:100%; height:100%; pointer-events:none;">
-                            ${reversedScale.map((i, idx) => {
-                                const percent = (idx / (reversedScale.length - 1)) * 100;
-                                return `<div style="position:absolute; top:${percent}%; left:50%; width:10px; height:1px; background:#aaa; opacity:0.7; transform:translate(-50%, -50%);"></div>`;
-                            }).join('')}
-                        </div>
-                    </div>
-                    <div class="legend-labels" style="position:relative; flex:1; min-width:0;">
-                        ${reversedScale.map((i, idx) => {
-                            const percent = (idx / (reversedScale.length - 1)) * 100;
-                            return `<div class="legend-label-row" style="position:absolute; top:${percent}%; left:0; transform:translateY(-50%); font-size:9.1px; line-height:1; letter-spacing:-0.03em; white-space:nowrap;"> <span class="legend-value" style="font-weight:400; color:#374151; opacity:0.8;">${i.t}°C</span></div>`;
-                        }).join('')}
-                    </div>
-                </div>
-            </div>
-            <div style="flex:1; min-width:0;">
-                <div class="legend-subtitle" style="font-size:10px; color:#374151; font-weight:700; margin: 1px 0 10px 0;">Opady:</div>
-                <div class="legend-body" style="display:flex; align-items:stretch; height: ${precipHeight}px; position:relative;">
-                    <div class="legend-bar" style="
-                        width: 6px;
-                        margin-right: 6px;
-                        border: 1px solid #999;
-                        background:
-                            linear-gradient(to bottom, ${precipReversedScale.map(i => `rgb(${i.r},${i.g},${i.b})`).join(', ')});
-                        position: relative;
-                    ">
-                        <div style="position:absolute; top:0; left:0; width:100%; height:100%; pointer-events:none;">
-                            ${precipReversedScale.map((i, idx) => {
-                                const percent = (idx / (precipReversedScale.length - 1)) * 100;
-                                return `<div style="position:absolute; top:${percent}%; left:50%; width:10px; height:1px; background:#aaa; opacity:0.7; transform:translate(-50%, -50%);"></div>`;
-                            }).join('')}
-                        </div>
-                    </div>
-                    <div class="legend-labels" style="position:relative; flex:1; min-width:0;">
-                        ${precipReversedScale.map((i, idx) => {
-                            const percent = (idx / (precipReversedScale.length - 1)) * 100;
-                            return `<div class="legend-label-row" style="position:absolute; top:${percent}%; left:0; transform:translateY(-50%); font-size:9.1px; line-height:1; letter-spacing:-0.03em; white-space:nowrap;"> <span class="legend-value" style="font-weight:400; color:#374151; opacity:0.8;">${i.mm} mm</span></div>`;
-                        }).join('')}
-                    </div>
-                </div>
-            </div>
-        </div>
-    `;
-
-    const toggle = div.querySelector('.panel-toggle-btn');
-    if (toggle) {
-        toggle.addEventListener('click', () => {
+        const globalToggle = div.querySelector('.panel-global-toggle');
+        globalToggle.addEventListener('click', () => {
             const collapsed = div.classList.toggle('collapsed');
-            toggle.textContent = collapsed ? '▸' : '▾';
-            const el = document.querySelector('.map-legend-container');
-            if (el) {
-                el.dataset.manualHidden = collapsed ? 'true' : 'false';
-                updateLegendVisibility();
-            }
+            globalToggle.textContent = collapsed ? '▸' : '▾';
+            globalToggle.setAttribute('aria-label', collapsed ? 'Pokaż okno' : 'Zwiń okno');
+            globalToggle.setAttribute('title', collapsed ? 'Pokaż okno' : 'Zwiń okno');
         });
-    }
 
-    L.DomEvent.disableClickPropagation(div);
-    L.DomEvent.disableScrollPropagation(div);
+        L.DomEvent.disableClickPropagation(div);
+        L.DomEvent.disableScrollPropagation(div);
+        return div;
+    };
 
-    return div;
-};
-legendControl.addTo(map);
+    layersControl.addTo(map);
+}
 
 function updateLegendVisibility() {
     const el = document.querySelector('.map-legend-container');
     if (!el) return;
-
     if (el.dataset.manualHidden === 'true') {
         el.style.display = 'none';
         return;
     }
-
     el.style.display = 'block';
 }
 
@@ -633,13 +573,8 @@ function initThemeToggle() {
     const lightBtn = document.getElementById('themeLightBtn');
     const darkBtn = document.getElementById('themeDarkBtn');
 
-    if (lightBtn) {
-        lightBtn.addEventListener('click', () => applyTheme('light'));
-    }
-
-    if (darkBtn) {
-        darkBtn.addEventListener('click', () => applyTheme('dark'));
-    }
+    if (lightBtn) lightBtn.addEventListener('click', () => applyTheme('light'));
+    if (darkBtn) darkBtn.addEventListener('click', () => applyTheme('dark'));
 
     applyTheme(savedTheme === 'dark' ? 'dark' : 'light');
 }
