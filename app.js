@@ -160,13 +160,11 @@ function addDataToParamGroup(rawValue, suffix, className, positionClass, latlng,
         let tooltipContent;
         if (isTemperatureLayer || isPrecipitationLayer || isWindLayer) {
             let borderStyle = '1px solid #666';
-            if (extremeType === 'max') borderStyle = '2px solid #ff0000';
-            if (extremeType === 'min') borderStyle = '2px solid #0000ff';
             const labelColor = isTemperatureLayer
                 ? getTemperatureStyle(rawValue).bg
                 : getLabelScaleColor(rawValue, isPrecipitationLayer ? precipLabelScale : windLabelScale);
             const textColor = '#000000';
-            tooltipContent = `<div style="background: ${labelColor} !important; color: ${textColor} !important; text-shadow: none; border: ${borderStyle} !important; width: 100%; height: 100%; display: inline-flex; align-items: center; justify-content: center; margin: -1px -2px; padding: 0 2px; border-radius: 2px;">${formatted}${suffix}</div>`;
+            tooltipContent = `<div style="background: ${labelColor} !important; color: ${textColor} !important; text-shadow: none; border: ${borderStyle} !important; box-sizing: content-box !important; width: 100%; height: 100%; display: inline-flex; align-items: center; justify-content: center; margin: -1px -2px; padding: 0 2px; border-radius: 2px;">${formatted}${suffix}</div>`;
         } else {
             tooltipContent = `${formatted}${suffix}`;
         }
