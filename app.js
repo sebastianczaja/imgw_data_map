@@ -75,6 +75,11 @@ function formatValue(value, decimals = 1) {
     return null;
 }
 
+function getRoundedNumericValue(value, decimals = 1) {
+    if (value === undefined || value === null || value === '' || !Number.isFinite(Number(value))) return null;
+    return Number(Number(value).toFixed(decimals));
+}
+
 function convertMetersPerSecondToKilometersPerHour(value) {
     if (value !== undefined && value !== null && value !== "") {
         if (!isNaN(value)) {
@@ -231,16 +236,25 @@ function renderDataForHour(hourStr) {
             const hourlyTa = p.Hourly && p.Hourly[hourStr] && p.Hourly[hourStr].Ta !== undefined ? p.Hourly[hourStr].Ta : null;
             const hourlyPrecip = p.Hourly && p.Hourly[hourStr] && p.Hourly[hourStr].Precip !== undefined ? p.Hourly[hourStr].Precip : null;
 
-            if (hourlyTa != null) { extremes.Ta.min = Math.min(extremes.Ta.min, hourlyTa); extremes.Ta.max = Math.max(extremes.Ta.max, hourlyTa); }
-            if (p.Tmin != null) { extremes.Tmin.min = Math.min(extremes.Tmin.min, p.Tmin); extremes.Tmin.max = Math.max(extremes.Tmin.max, p.Tmin); }
-            if (p.Tmax != null) { extremes.Tmax.min = Math.min(extremes.Tmax.min, p.Tmax); extremes.Tmax.max = Math.max(extremes.Tmax.max, p.Tmax); }
-            if (p.Tmin_hour != null) { extremes.Tmin_hour.min = Math.min(extremes.Tmin_hour.min, p.Tmin_hour); extremes.Tmin_hour.max = Math.max(extremes.Tmin_hour.max, p.Tmin_hour); }
-            if (p.Tmax_hour != null) { extremes.Tmax_hour.min = Math.min(extremes.Tmax_hour.min, p.Tmax_hour); extremes.Tmax_hour.max = Math.max(extremes.Tmax_hour.max, p.Tmax_hour); }
-            if (p.Tg != null) { extremes.Tg.min = Math.min(extremes.Tg.min, p.Tg); extremes.Tg.max = Math.max(extremes.Tg.max, p.Tg); }
-            if (wAvg != null) { extremes.Wind_avg.min = Math.min(extremes.Wind_avg.min, wAvg); extremes.Wind_avg.max = Math.max(extremes.Wind_avg.max, wAvg); }
-            if (wMax != null) { extremes.Wind_max.min = Math.min(extremes.Wind_max.min, wMax); extremes.Wind_max.max = Math.max(extremes.Wind_max.max, wMax); }
-            if (p.Precip_24h != null) extremes.Precip_24h.max = Math.max(extremes.Precip_24h.max, p.Precip_24h);
-            if (hourlyPrecip != null) extremes.Precip_10min.max = Math.max(extremes.Precip_10min.max, hourlyPrecip);
+            const updateExtreme = (extreme, value) => {
+                const roundedValue = getRoundedNumericValue(value);
+                if (roundedValue === null) return;
+                extreme.min = Math.min(extreme.min, roundedValue);
+                extreme.max = Math.max(extreme.max, roundedValue);
+            };
+
+            updateExtreme(extremes.Ta, hourlyTa);
+            updateExtreme(extremes.Tmin, p.Tmin);
+            updateExtreme(extremes.Tmax, p.Tmax);
+            updateExtreme(extremes.Tmin_hour, p.Tmin_hour);
+            updateExtreme(extremes.Tmax_hour, p.Tmax_hour);
+            updateExtreme(extremes.Tg, p.Tg);
+            updateExtreme(extremes.Wind_avg, wAvg);
+            updateExtreme(extremes.Wind_max, wMax);
+            const roundedPrecip24h = getRoundedNumericValue(p.Precip_24h);
+            const roundedPrecip10min = getRoundedNumericValue(hourlyPrecip);
+            if (roundedPrecip24h !== null) extremes.Precip_24h.max = Math.max(extremes.Precip_24h.max, roundedPrecip24h);
+            if (roundedPrecip10min !== null) extremes.Precip_10min.max = Math.max(extremes.Precip_10min.max, roundedPrecip10min);
         }
     });
 
@@ -276,11 +290,10 @@ function renderDataForHour(hourStr) {
             if (fWindAvg !== null) popupContent += `<p><strong>Wiatr średni:</strong> ${fWindAvg} km/h</p>`;
 
             const getEx = (val, field) => {
-                if (val == null || isNaN(val)) return '';
-                const parsed = parseFloat(val);
-                const tolerance = 1e-8;
-                if (extremes[field].max !== undefined && Math.abs(parsed - extremes[field].max) <= tolerance) return 'max';
-                if (extremes[field].min !== undefined && Math.abs(parsed - extremes[field].min) <= tolerance) return 'min';
+                const roundedValue = getRoundedNumericValue(val);
+                if (roundedValue === null) return '';
+                if (extremes[field].max !== undefined && roundedValue === extremes[field].max) return 'max';
+                if (extremes[field].min !== undefined && roundedValue === extremes[field].min) return 'min';
                 return '';
             };
 
@@ -384,7 +397,7 @@ function updateRankingsPanel(hourStr) {
             const props = feature && feature.properties;
             if (!props || props.Status !== 'ACTIVE') return;
             const hourlyData = props.Hourly && props.Hourly[hourStr];
-            const temperature = hourlyData && hourlyData.Ta !== undefined ? Number(hourlyData.Ta) : null;
+            const temperature = hourlyData && hourlyData.Ta !== undefined ? getRoundedNumericValue(hourlyData.Ta) : null;
             const precipitation = props.Precip_24h !== undefined && props.Precip_24h !== null ? Number(props.Precip_24h) : null;
             const wind = props.Wind_max !== undefined && props.Wind_max !== null ? Number(convertMetersPerSecondToKilometersPerHour(props.Wind_max)) : null;
             const station = props.Station_name || props.Station_id || 'Brak nazwy';
@@ -392,10 +405,15 @@ function updateRankingsPanel(hourStr) {
         });
     }
 
-    const sortValues = (key, direction) => entries
-        .filter(entry => entry[key] !== null && Number.isFinite(entry[key]))
-        .sort((first, second) => direction * (second[key] - first[key]))
-        .slice(0, 10);
+    const sortValues = (key, direction) => {
+        const sortedEntries = entries
+            .filter(entry => entry[key] !== null && Number.isFinite(entry[key]))
+            .sort((first, second) => direction * (second[key] - first[key]));
+        const visibleEntries = sortedEntries.slice(0, 10);
+        const boundaryValue = sortedEntries[0]?.[key];
+        const tiedBoundaryEntries = sortedEntries.slice(10).filter(entry => entry[key] === boundaryValue);
+        return visibleEntries.concat(tiedBoundaryEntries);
+    };
     const rankings = {
         'highest-temperature': { values: sortValues('temperature', 1), unit: '°C', key: 'temperature', highlight: true },
         'lowest-temperature': { values: sortValues('temperature', -1).sort((first, second) => second.temperature - first.temperature), unit: '°C', key: 'temperature', highlightLowest: true },
