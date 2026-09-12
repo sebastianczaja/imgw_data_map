@@ -50,6 +50,18 @@ const etykietyWindMax = L.layerGroup();
 const etykietyElevation = L.layerGroup();
 const etykietyStationName = L.layerGroup();
 
+const tempLayerMapping = [
+    { key: 'Ta', label: 'Temperatura aktualna (Ta)', shortName: 'Ta', group: etykietyTa },
+    { key: 'Tmin_hour', label: 'Temperatura min. godzinowa (Tmin_hour)', shortName: 'Tmin_hour', group: etykietyTminHour },
+    { key: 'Tmax_hour', label: 'Temperatura max. godzinowa (Tmax_hour)', shortName: 'Tmax_hour', group: etykietyTmaxHour },
+    { key: 'Tmin', label: 'Temperatura minimalna (Tmin)', shortName: 'Tmin', group: etykietyTmin },
+    { key: 'Tmax', label: 'Temperatura maksymalna (Tmax)', shortName: 'Tmax', group: etykietyTmax },
+    { key: 'Tg', label: 'Temperatura przy gruncie (Tg)', shortName: 'Tg', group: etykietyTg }
+];
+
+let activeTempParam = 'Ta';
+let currentHourStr = '12';
+
 etykietyTa.addTo(map);
 
 let globalGeoJsonData = null;
@@ -180,6 +192,47 @@ function addDataToParamGroup(rawValue, suffix, className, positionClass, latlng,
     }
 }
 
+function getSelectedTempParam() {
+    const activeMapping = tempLayerMapping.find(t => t.key === activeTempParam);
+    if (activeMapping && map.hasLayer(activeMapping.group)) {
+        return activeMapping;
+    }
+    const checkedMapping = tempLayerMapping.find(t => map.hasLayer(t.group));
+    if (checkedMapping) {
+        return checkedMapping;
+    }
+    return tempLayerMapping.find(t => t.key === activeTempParam) || tempLayerMapping[0];
+}
+
+function getFeatureTempValue(props, tempKey, hourStr) {
+    if (!props) return null;
+    if (tempKey === 'Ta') {
+        if (props.Hourly) {
+            const hourlyTa = (props.Hourly[hourStr] && props.Hourly[hourStr].Ta !== undefined && props.Hourly[hourStr].Ta !== null)
+                ? props.Hourly[hourStr].Ta
+                : null;
+            return getRoundedNumericValue(hourlyTa);
+        }
+        return getRoundedNumericValue(props.Ta);
+    }
+    if (tempKey === 'Tmin') {
+        return getRoundedNumericValue(props.Tmin);
+    }
+    if (tempKey === 'Tmax') {
+        return getRoundedNumericValue(props.Tmax);
+    }
+    if (tempKey === 'Tmin_hour') {
+        return getRoundedNumericValue(props.Tmin_hour);
+    }
+    if (tempKey === 'Tmax_hour') {
+        return getRoundedNumericValue(props.Tmax_hour);
+    }
+    if (tempKey === 'Tg') {
+        return getRoundedNumericValue(props.Tg);
+    }
+    return getRoundedNumericValue(props[tempKey]);
+}
+
 function clearMapData() {
     [etykietyTa, etykietyTmin, etykietyTmax, etykietyTminHour, etykietyTmaxHour, etykietyTg, etykietyOpady24h, etykietyOpady10min, etykietyWindAvg, etykietyWindMax, etykietyElevation, etykietyStationName].forEach(g => { try { g.clearLayers(); } catch (e){} });
 }
@@ -190,7 +243,8 @@ let rankingsControl = null;
 function getLastAvailableHourFromData(data) {
     if (!data || !Array.isArray(data.features)) return 23;
 
-    let maxHour = -1;
+    let maxTaHour = -1;
+    let maxAnyHour = -1;
     data.features.forEach(feature => {
         const props = feature && feature.properties ? feature.properties : null;
         if (!props || props.Status !== 'ACTIVE' || !props.Hourly) return;
@@ -200,19 +254,25 @@ function getLastAvailableHourFromData(data) {
             if (!hourValue) return;
             const hourNum = Number(hourKey);
             if (!Number.isNaN(hourNum)) {
+                if (hourValue.Ta !== undefined && hourValue.Ta !== null && hourValue.Ta !== '') {
+                    maxTaHour = Math.max(maxTaHour, hourNum);
+                }
                 const hasMeasurement = Object.keys(hourValue).some(key => hourValue[key] !== undefined && hourValue[key] !== null && hourValue[key] !== '');
-                if (hasMeasurement) maxHour = Math.max(maxHour, hourNum);
+                if (hasMeasurement) maxAnyHour = Math.max(maxAnyHour, hourNum);
             }
         });
     });
 
-    return maxHour >= 0 ? maxHour : 23;
+    if (maxTaHour >= 0) return maxTaHour;
+    if (maxAnyHour >= 0) return maxAnyHour;
+    return 23;
 }
 
 function processData(data) {
     globalGeoJsonData = data; 
     const hourSlider = document.getElementById('hourSlider');
     const hourStr = hourSlider ? String(getLastAvailableHourFromData(data)).padStart(2, '0') : '12';
+    currentHourStr = hourStr;
     if (hourSlider) {
         hourSlider.value = String(getLastAvailableHourFromData(data));
         const currentTimeLabel = document.getElementById('currentTimeLabel');
@@ -223,6 +283,9 @@ function processData(data) {
 }
 
 function renderDataForHour(hourStr) {
+    if (!layersControl) buildUnifiedLayerControl();
+    if (!rankingsControl) buildRankingsControl();
+    currentHourStr = hourStr;
     clearMapData();
     updateRankingsPanel(hourStr);
     if (!globalGeoJsonData) return;
@@ -233,8 +296,12 @@ function renderDataForHour(hourStr) {
         const p = f.properties;
         if (p.Status === 'ACTIVE') {
             const wAvg = convertMetersPerSecondToKilometersPerHour(p.Wind_avg), wMax = convertMetersPerSecondToKilometersPerHour(p.Wind_max);
-            const hourlyTa = p.Hourly && p.Hourly[hourStr] && p.Hourly[hourStr].Ta !== undefined ? p.Hourly[hourStr].Ta : null;
-            const hourlyPrecip = p.Hourly && p.Hourly[hourStr] && p.Hourly[hourStr].Precip !== undefined ? p.Hourly[hourStr].Precip : null;
+            const hourlyTa = p.Hourly
+                ? (p.Hourly[hourStr] && p.Hourly[hourStr].Ta !== undefined && p.Hourly[hourStr].Ta !== null ? p.Hourly[hourStr].Ta : null)
+                : (p.Ta !== undefined ? p.Ta : null);
+            const hourlyPrecip = p.Hourly
+                ? (p.Hourly[hourStr] && p.Hourly[hourStr].Precip !== undefined && p.Hourly[hourStr].Precip !== null ? p.Hourly[hourStr].Precip : null)
+                : (p.Precip_10min !== undefined ? p.Precip_10min : null);
 
             const updateExtreme = (extreme, value) => {
                 const roundedValue = getRoundedNumericValue(value);
@@ -265,8 +332,12 @@ function renderDataForHour(hourStr) {
 
             const wAvgKmh = convertMetersPerSecondToKilometersPerHour(props.Wind_avg), wMaxKmh = convertMetersPerSecondToKilometersPerHour(props.Wind_max);
             
-            let hourlyTa = props.Hourly && props.Hourly[hourStr] && props.Hourly[hourStr].Ta !== undefined ? props.Hourly[hourStr].Ta : null;
-            let hourlyPrecip = props.Hourly && props.Hourly[hourStr] && props.Hourly[hourStr].Precip !== undefined ? props.Hourly[hourStr].Precip : null;
+            let hourlyTa = props.Hourly
+                ? (props.Hourly[hourStr] && props.Hourly[hourStr].Ta !== undefined && props.Hourly[hourStr].Ta !== null ? props.Hourly[hourStr].Ta : null)
+                : (props.Ta !== undefined ? props.Ta : null);
+            let hourlyPrecip = props.Hourly
+                ? (props.Hourly[hourStr] && props.Hourly[hourStr].Precip !== undefined && props.Hourly[hourStr].Precip !== null ? props.Hourly[hourStr].Precip : null)
+                : (props.Precip_10min !== undefined ? props.Precip_10min : null);
 
             const fTa = formatValue(hourlyTa, 1), 
                   fTmin = formatValue(props.Tmin, 1), 
@@ -275,7 +346,7 @@ function renderDataForHour(hourStr) {
                   fTmaxHour = formatValue(props.Tmax_hour, 1), 
                   fTg = formatValue(props.Tg, 1), 
                   fPrecip24h = formatValue(props.Precip_24h, 1), 
-                  fPrecip10min = formatValue(props.Precip_10min, 1), 
+                  fPrecip10min = formatValue(hourlyPrecip, 1), 
                   fWindAvg = formatValue(wAvgKmh, 1), 
                   fWindMax = formatValue(wMaxKmh, 1), 
                   fElevation = formatValue(props.Elevation, 0);
@@ -283,11 +354,15 @@ function renderDataForHour(hourStr) {
             let popupContent = `<h3>${props.Station_name || 'Stacja pomiarowa'}</h3><hr><p><strong>ID:</strong> ${props.Station_id}</p><p><strong>Status:</strong> <span style="color:#2ecc71; font-weight:bold;">Aktywna</span></p>`;
             if (fElevation !== null) popupContent += `<p><strong>Wysokość:</strong> ${fElevation} m n.p.m.</p>`;
             if (fTa !== null) popupContent += `<p><strong>Temperatura (${hourStr}:00):</strong> ${fTa}°C</p>`;
-            if (hourlyPrecip !== null) popupContent += `<p><strong>Opad godzinowy:</strong> ${formatValue(hourlyPrecip, 1)} mm</p>`;
+            if (hourlyPrecip !== null) popupContent += `<p><strong>Opad (${hourStr}:00):</strong> ${formatValue(hourlyPrecip, 1)} mm</p>`;
+            if (fTminHour !== null) popupContent += `<p><strong>Tmin godzinowe:</strong> ${fTminHour}°C</p>`;
+            if (fTmaxHour !== null) popupContent += `<p><strong>Tmax godzinowe:</strong> ${fTmaxHour}°C</p>`;
             if (fTmin !== null) popupContent += `<p><strong>Tmin (dobowe):</strong> ${fTmin}°C</p>`;
             if (fTmax !== null) popupContent += `<p><strong>Tmax (dobowe):</strong> ${fTmax}°C</p>`;
+            if (fTg !== null) popupContent += `<p><strong>Temperatura przy gruncie (Tg):</strong> ${fTg}°C</p>`;
             if (fPrecip24h !== null) popupContent += `<p><strong>Opad dobowy (24h):</strong> ${fPrecip24h} mm</p>`;
             if (fWindAvg !== null) popupContent += `<p><strong>Wiatr średni:</strong> ${fWindAvg} km/h</p>`;
+            if (fWindMax !== null) popupContent += `<p><strong>Porywy wiatru:</strong> ${fWindMax} km/h</p>`;
 
             const getEx = (val, field) => {
                 const roundedValue = getRoundedNumericValue(val);
@@ -353,11 +428,11 @@ function buildRankingsControl() {
             </div>
             <div class="rankings-content">
                 <section class="ranking-section">
-                    <h3>Najwyższe temperatury:</h3>
+                    <h3 data-ranking-title="highest-temperature">Najwyższe temperatury (Ta):</h3>
                     <div class="ranking-table-wrap"><table><tbody data-ranking="highest-temperature"></tbody></table></div>
                 </section>
                 <section class="ranking-section">
-                    <h3>Najniższe temperatury:</h3>
+                    <h3 data-ranking-title="lowest-temperature">Najniższe temperatury (Ta):</h3>
                     <div class="ranking-table-wrap"><table><tbody data-ranking="lowest-temperature"></tbody></table></div>
                 </section>
                 <section class="ranking-section">
@@ -387,17 +462,30 @@ function buildRankingsControl() {
 }
 
 function updateRankingsPanel(hourStr) {
+    if (hourStr !== undefined) {
+        currentHourStr = String(hourStr).padStart(2, '0');
+    }
+    const hStr = currentHourStr;
     if (!rankingsControl) buildRankingsControl();
     const container = rankingsControl.getContainer();
     if (!container) return;
+
+    const selectedTemp = getSelectedTempParam();
+    const highestTitle = container.querySelector('[data-ranking-title="highest-temperature"]');
+    const lowestTitle = container.querySelector('[data-ranking-title="lowest-temperature"]');
+    if (highestTitle) {
+        highestTitle.textContent = `Najwyższe temperatury (${selectedTemp.shortName}):`;
+    }
+    if (lowestTitle) {
+        lowestTitle.textContent = `Najniższe temperatury (${selectedTemp.shortName}):`;
+    }
 
     const entries = [];
     if (globalGeoJsonData && Array.isArray(globalGeoJsonData.features)) {
         globalGeoJsonData.features.forEach(feature => {
             const props = feature && feature.properties;
             if (!props || props.Status !== 'ACTIVE') return;
-            const hourlyData = props.Hourly && props.Hourly[hourStr];
-            const temperature = hourlyData && hourlyData.Ta !== undefined ? getRoundedNumericValue(hourlyData.Ta) : null;
+            const temperature = getFeatureTempValue(props, selectedTemp.key, hStr);
             const precipitation = props.Precip_24h !== undefined && props.Precip_24h !== null ? Number(props.Precip_24h) : null;
             const wind = props.Wind_max !== undefined && props.Wind_max !== null ? Number(convertMetersPerSecondToKilometersPerHour(props.Wind_max)) : null;
             const station = props.Station_name || props.Station_id || 'Brak nazwy';
@@ -447,6 +535,7 @@ function updateRankingsPanel(hourStr) {
 function showNoDataState(dateStr) {
     clearMapData();
     globalGeoJsonData = null;
+    updateRankingsPanel(currentHourStr);
 
     const currentTimeLabel = document.getElementById('currentTimeLabel');
     const span = currentTimeLabel ? currentTimeLabel.querySelector('span') : null;
@@ -466,21 +555,28 @@ function loadDataForDate(dateStr) {
     clearMapData();
     if (!dateStr) return;
     const path = `imgw_data/${dateStr}.geojson`;
-    fetch(path).then(r => { if (!r.ok) throw new Error('no file'); return r.json(); }).then(j => {
-        globalGeoJsonData = j;
-        processData(j);
-        const currentTimeLabel = document.getElementById('currentTimeLabel');
-        const span = currentTimeLabel ? currentTimeLabel.querySelector('span') : null;
-        if (span) span.style.color = '#2ecc71';
-        const datePicker = document.getElementById('datePicker');
-        if (datePicker) datePicker.setCustomValidity('');
-    }).catch(err => {
-        console.error('Could not load', path, err);
-        showNoDataState(dateStr);
-    });
+    fetch(path)
+        .then(r => {
+            if (!r.ok) throw new Error('no file');
+            return r.json();
+        })
+        .then(j => {
+            globalGeoJsonData = j;
+            processData(j);
+            const currentTimeLabel = document.getElementById('currentTimeLabel');
+            const span = currentTimeLabel ? currentTimeLabel.querySelector('span') : null;
+            if (span) span.style.color = '#2ecc71';
+            const datePicker = document.getElementById('datePicker');
+            if (datePicker) datePicker.setCustomValidity('');
+        })
+        .catch(err => {
+            console.error('Could not load', path, err);
+            showNoDataState(dateStr);
+        });
 }
 
 function buildUnifiedLayerControl() {
+    if (layersControl) return;
     const overlayMaps = {
         "Nazwa stacji (Station_name)": etykietyStationName,
         "Wysokość (Elevation)": etykietyElevation,
@@ -646,10 +742,22 @@ function buildUnifiedLayerControl() {
             row.addEventListener('change', () => {
                 if (input.checked) {
                     map.addLayer(layerGroup);
+                    const tempItem = tempLayerMapping.find(t => t.group === layerGroup);
+                    if (tempItem) {
+                        activeTempParam = tempItem.key;
+                    }
                 } else {
                     map.removeLayer(layerGroup);
+                    const tempItem = tempLayerMapping.find(t => t.group === layerGroup);
+                    if (tempItem && activeTempParam === tempItem.key) {
+                        const nextActive = tempLayerMapping.find(t => map.hasLayer(t.group));
+                        if (nextActive) {
+                            activeTempParam = nextActive.key;
+                        }
+                    }
                 }
                 updateLegendVisibility();
+                updateRankingsPanel(currentHourStr);
             });
             parameterList.appendChild(row);
         });
@@ -823,13 +931,34 @@ function initTimelineUI() {
         });
     }
 
+    buildUnifiedLayerControl();
+    buildRankingsControl();
+
     if (datePicker) {
         datePicker.value = todayStr;
-        loadDataForDate(todayStr);
+
+        fetch('imgw_data/dates.json')
+            .then(r => (r.ok ? r.json() : null))
+            .then(dates => {
+                let initialDate = todayStr;
+                if (Array.isArray(dates) && dates.length > 0) {
+                    if (!dates.includes(todayStr)) {
+                        initialDate = dates[0];
+                    }
+                }
+                datePicker.value = initialDate;
+                loadDataForDate(initialDate);
+            })
+            .catch(() => {
+                datePicker.value = todayStr;
+                loadDataForDate(todayStr);
+            });
 
         datePicker.addEventListener('change', () => {
             loadDataForDate(datePicker.value);
         });
+    } else {
+        loadDataForDate(todayStr);
     }
 }
 
