@@ -13,6 +13,12 @@ const cartoDbDark = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/ser
     attribution: 'Tiles &copy; Esri &mdash; Esri, DeLorme, NAVTEQ, TomTom, Intermap, iPC, USGS, FAO, NPS, NRCAN, GeoBase, Kadaster NL, Ordnance Survey, Esri Japan, METI, Esri China (Hong Kong), and the GIS User Community'
 });
 
+const darkMapReference = L.tileLayer('https://services.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}', {
+    maxZoom: 20,
+    opacity: 0.7,
+    attribution: 'Granice i miejscowości &copy; Esri'
+});
+
 const openTopo = L.tileLayer('https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png', {
     maxZoom: 17,
     attribution: 'Map data &copy; OpenStreetMap contributors'
@@ -641,7 +647,7 @@ function buildUnifiedLayerControl() {
                 <div class="basemap-body">
                     <label><input type="radio" name="customBaseLayer" value="osm">Standardowy (OSM)</label>
                     <label><input type="radio" name="customBaseLayer" value="esri">Satelita (Esri)</label>
-                    <label><input type="radio" name="customBaseLayer" value="carto">Ciemny (CartoDB)</label>
+                    <label><input type="radio" name="customBaseLayer" value="carto">Ciemny z granicami (Esri)</label>
                     <label><input type="radio" name="customBaseLayer" value="topo" checked>Topograficzny</label>
                 </div>
                 <div class="basemap-footer">
@@ -772,6 +778,7 @@ function buildUnifiedLayerControl() {
         radios.forEach(radio => {
             radio.addEventListener('change', function (e) {
                 map.removeLayer(activeBaseLayer);
+                map.removeLayer(darkMapReference);
                 const selectedVal = e.target.value;
                 if (selectedVal === 'osm') activeBaseLayer = osmLayer;
                 if (selectedVal === 'esri') activeBaseLayer = esriSatelite;
@@ -781,6 +788,10 @@ function buildUnifiedLayerControl() {
                 activeBaseLayer.setOpacity(opacity);
                 map.addLayer(activeBaseLayer);
                 activeBaseLayer.bringToBack();
+                if (selectedVal === 'carto') {
+                    darkMapReference.setOpacity(opacity * 0.7);
+                    map.addLayer(darkMapReference);
+                }
             });
         });
 
@@ -788,6 +799,7 @@ function buildUnifiedLayerControl() {
             slider.addEventListener('input', function (e) {
                 const alpha = parseFloat(e.target.value);
                 if (activeBaseLayer && activeBaseLayer.setOpacity) activeBaseLayer.setOpacity(alpha);
+                if (map.hasLayer(darkMapReference)) darkMapReference.setOpacity(alpha * 0.7);
                 if (valLabel) valLabel.textContent = Math.round(alpha * 100) + '%';
             });
         }
