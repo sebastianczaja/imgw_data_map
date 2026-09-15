@@ -368,6 +368,7 @@ function renderDataForHour(hourStr) {
                 const roundedValue = getRoundedNumericValue(val);
                 if (roundedValue === null) return '';
                 if (extremes[field].max !== undefined && roundedValue === extremes[field].max) return 'max';
+                if (['Precip_24h', 'Precip_10min', 'Wind_avg', 'Wind_max'].includes(field)) return '';
                 if (extremes[field].min !== undefined && roundedValue === extremes[field].min) return 'min';
                 return '';
             };
