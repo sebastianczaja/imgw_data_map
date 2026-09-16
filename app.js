@@ -25,6 +25,42 @@ const openTopo = L.tileLayer('https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png',
 });
 
 let activeBaseLayer = openTopo;
+const mapPreferencesStorageKey = 'imgw_map_preferences';
+
+function loadMapPreferences() {
+    const defaults = {
+        baseLayer: 'topo',
+        opacity: 1,
+        parameters: ['Temperatura aktualna (Ta)']
+    };
+
+    try {
+        const savedPreferences = JSON.parse(localStorage.getItem(mapPreferencesStorageKey));
+        if (!savedPreferences || typeof savedPreferences !== 'object') return defaults;
+
+        return {
+            baseLayer: ['osm', 'esri', 'carto', 'topo'].includes(savedPreferences.baseLayer)
+                ? savedPreferences.baseLayer
+                : defaults.baseLayer,
+            opacity: Number.isFinite(Number(savedPreferences.opacity))
+                ? Math.min(1, Math.max(0, Number(savedPreferences.opacity)))
+                : defaults.opacity,
+            parameters: Array.isArray(savedPreferences.parameters)
+                ? savedPreferences.parameters
+                : defaults.parameters
+        };
+    } catch (error) {
+        return defaults;
+    }
+}
+
+function saveMapPreferences(baseLayer, opacity, parameters) {
+    try {
+        localStorage.setItem(mapPreferencesStorageKey, JSON.stringify({ baseLayer, opacity, parameters }));
+    } catch (error) {
+        console.warn('Nie udało się zapisać ustawień mapy:', error);
+    }
+}
 
 const map = L.map('map', {
     center: [52.218811, 19.479699],
@@ -584,6 +620,7 @@ function loadDataForDate(dateStr) {
 
 function buildUnifiedLayerControl() {
     if (layersControl) return;
+    const savedPreferences = loadMapPreferences();
     const overlayMaps = {
         "Nazwa stacji (Station_name)": etykietyStationName,
         "Wysokość (Elevation)": etykietyElevation,
@@ -743,7 +780,8 @@ function buildUnifiedLayerControl() {
             row.className = 'leaflet-control-layers-overlays-label';
             const input = document.createElement('input');
             input.type = 'checkbox';
-            input.checked = label === 'Temperatura aktualna (Ta)';
+            input.dataset.overlayLabel = label;
+            input.checked = savedPreferences.parameters.includes(label);
             row.appendChild(input);
             row.appendChild(document.createTextNode(label));
             row.addEventListener('change', () => {
@@ -765,6 +803,7 @@ function buildUnifiedLayerControl() {
                 }
                 updateLegendVisibility();
                 updateRankingsPanel(currentHourStr);
+                saveCurrentMapPreferences();
             });
             parameterList.appendChild(row);
         });
@@ -775,23 +814,53 @@ function buildUnifiedLayerControl() {
         const zoomSlider = div.querySelector('#zoomSlider');
         const zoomValLabel = div.querySelector('#zoomVal');
 
+        const saveCurrentMapPreferences = () => {
+            const selectedBaseLayer = div.querySelector('input[name="customBaseLayer"]:checked')?.value || 'topo';
+            const selectedParameters = [...parameterList.querySelectorAll('input[type="checkbox"]:checked')]
+                .map(input => input.dataset.overlayLabel);
+            saveMapPreferences(selectedBaseLayer, parseFloat(slider?.value || '1'), selectedParameters);
+        };
+
+        const applyBaseLayer = selectedVal => {
+            map.removeLayer(activeBaseLayer);
+            map.removeLayer(darkMapReference);
+            if (selectedVal === 'osm') activeBaseLayer = osmLayer;
+            if (selectedVal === 'esri') activeBaseLayer = esriSatelite;
+            if (selectedVal === 'carto') activeBaseLayer = cartoDbDark;
+            if (selectedVal === 'topo') activeBaseLayer = openTopo;
+            const opacity = slider ? parseFloat(slider.value || '1') : 1;
+            activeBaseLayer.setOpacity(opacity);
+            map.addLayer(activeBaseLayer);
+            activeBaseLayer.bringToBack();
+            if (selectedVal === 'carto') {
+                darkMapReference.setOpacity(opacity * 0.7);
+                map.addLayer(darkMapReference);
+            }
+        };
+
+        radios.forEach(radio => {
+            radio.checked = radio.value === savedPreferences.baseLayer;
+        });
+        if (slider) {
+            slider.value = String(savedPreferences.opacity);
+            if (valLabel) valLabel.textContent = Math.round(savedPreferences.opacity * 100) + '%';
+        }
+        Object.entries(overlayMaps).forEach(([label, layerGroup]) => {
+            if (savedPreferences.parameters.includes(label)) {
+                map.addLayer(layerGroup);
+            } else {
+                map.removeLayer(layerGroup);
+            }
+        });
+        const selectedTemperature = tempLayerMapping.find(item => map.hasLayer(item.group));
+        if (selectedTemperature) activeTempParam = selectedTemperature.key;
+        applyBaseLayer(savedPreferences.baseLayer);
+
         radios.forEach(radio => {
             radio.addEventListener('change', function (e) {
-                map.removeLayer(activeBaseLayer);
-                map.removeLayer(darkMapReference);
                 const selectedVal = e.target.value;
-                if (selectedVal === 'osm') activeBaseLayer = osmLayer;
-                if (selectedVal === 'esri') activeBaseLayer = esriSatelite;
-                if (selectedVal === 'carto') activeBaseLayer = cartoDbDark;
-                if (selectedVal === 'topo') activeBaseLayer = openTopo;
-                const opacity = slider ? parseFloat(slider.value || '1') : 1;
-                activeBaseLayer.setOpacity(opacity);
-                map.addLayer(activeBaseLayer);
-                activeBaseLayer.bringToBack();
-                if (selectedVal === 'carto') {
-                    darkMapReference.setOpacity(opacity * 0.7);
-                    map.addLayer(darkMapReference);
-                }
+                applyBaseLayer(selectedVal);
+                saveCurrentMapPreferences();
             });
         });
 
@@ -801,6 +870,7 @@ function buildUnifiedLayerControl() {
                 if (activeBaseLayer && activeBaseLayer.setOpacity) activeBaseLayer.setOpacity(alpha);
                 if (map.hasLayer(darkMapReference)) darkMapReference.setOpacity(alpha * 0.7);
                 if (valLabel) valLabel.textContent = Math.round(alpha * 100) + '%';
+                saveCurrentMapPreferences();
             });
         }
 
