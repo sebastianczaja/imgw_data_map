@@ -310,13 +310,16 @@ function getLastAvailableHourFromData(data) {
     return 23;
 }
 
-function processData(data) {
+function processData(data, selectedHour) {
     globalGeoJsonData = data; 
     const hourSlider = document.getElementById('hourSlider');
-    const hourStr = hourSlider ? String(getLastAvailableHourFromData(data)).padStart(2, '0') : '12';
+    const hour = Number.isInteger(selectedHour) && selectedHour >= 0 && selectedHour <= 23
+        ? selectedHour
+        : getLastAvailableHourFromData(data);
+    const hourStr = hourSlider ? String(hour).padStart(2, '0') : '12';
     currentHourStr = hourStr;
     if (hourSlider) {
-        hourSlider.value = String(getLastAvailableHourFromData(data));
+        hourSlider.value = String(hour);
         const currentTimeLabel = document.getElementById('currentTimeLabel');
         const span = currentTimeLabel ? currentTimeLabel.querySelector('span') : null;
         if (span) span.textContent = hourStr + ':00';
@@ -594,7 +597,7 @@ function showNoDataState(dateStr) {
     }
 }
 
-function loadDataForDate(dateStr) {
+function loadDataForDate(dateStr, selectedHour) {
     clearMapData();
     if (!dateStr) return;
     const path = `imgw_data/${dateStr}.geojson`;
@@ -605,7 +608,7 @@ function loadDataForDate(dateStr) {
         })
         .then(j => {
             globalGeoJsonData = j;
-            processData(j);
+            processData(j, selectedHour);
             const currentTimeLabel = document.getElementById('currentTimeLabel');
             const span = currentTimeLabel ? currentTimeLabel.querySelector('span') : null;
             if (span) span.style.color = '#2ecc71';
@@ -958,6 +961,7 @@ function initTimelineUI() {
     const hourSlider = document.getElementById('hourSlider');
     const ticksContainer = document.getElementById('ticksContainer');
     const currentTimeLabel = document.getElementById('currentTimeLabel');
+    let availableDates = [];
     initThemeToggle();
 
     if (ticksContainer) {
@@ -989,12 +993,32 @@ function initTimelineUI() {
         document.addEventListener('keydown', (e) => {
             if (e.key === 'ArrowLeft') {
                 e.preventDefault();
-                const newVal = Math.max(0, parseInt(hourSlider.value) - 1);
+                const currentHour = parseInt(hourSlider.value);
+                if (currentHour === 0 && datePicker) {
+                    const currentDateIndex = availableDates.indexOf(datePicker.value);
+                    const previousDate = availableDates[currentDateIndex + 1];
+                    if (previousDate) {
+                        datePicker.value = previousDate;
+                        loadDataForDate(previousDate, 23);
+                    }
+                    return;
+                }
+                const newVal = Math.max(0, currentHour - 1);
                 hourSlider.value = newVal;
                 hourSlider.dispatchEvent(new Event('input'));
             } else if (e.key === 'ArrowRight') {
                 e.preventDefault();
-                const newVal = Math.min(23, parseInt(hourSlider.value) + 1);
+                const currentHour = parseInt(hourSlider.value);
+                if (currentHour === 23 && datePicker) {
+                    const currentDateIndex = availableDates.indexOf(datePicker.value);
+                    const nextDate = availableDates[currentDateIndex - 1];
+                    if (nextDate) {
+                        datePicker.value = nextDate;
+                        loadDataForDate(nextDate, 0);
+                    }
+                    return;
+                }
+                const newVal = Math.min(23, currentHour + 1);
                 hourSlider.value = newVal;
                 hourSlider.dispatchEvent(new Event('input'));
             } else if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
@@ -1025,6 +1049,7 @@ function initTimelineUI() {
             .then(dates => {
                 let initialDate = todayStr;
                 if (Array.isArray(dates) && dates.length > 0) {
+                    availableDates = dates;
                     if (!dates.includes(todayStr)) {
                         initialDate = dates[0];
                     }
