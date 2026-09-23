@@ -108,10 +108,21 @@ etykietyTa.addTo(map);
 
 let globalGeoJsonData = null;
 
+function hasCompleteDailyTemperatureData(feature, latestAvailableHour) {
+    const hourly = feature && feature.properties ? feature.properties.Hourly : null;
+    if (!hourly || typeof hourly !== 'object') return false;
+
+    return Array.from({ length: latestAvailableHour + 1 }, (_, hour) => String(hour).padStart(2, '0'))
+        .every(hourKey => Number.isFinite(Number(hourly[hourKey]?.Ta)));
+}
+
 function getMarkerStyle(feature) {
+    const latestAvailableHour = getLastAvailableHourFromData(globalGeoJsonData);
+    const hasIncompleteDailyData = !hasCompleteDailyTemperatureData(feature, latestAvailableHour);
+
     return {
         radius: 3,
-        fillColor: '#2ecc71',
+        fillColor: hasIncompleteDailyData ? '#ffff00' : '#2ecc71',
         color: '#000',
         weight: 1,
         opacity: 1,
