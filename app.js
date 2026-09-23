@@ -108,17 +108,21 @@ etykietyTa.addTo(map);
 
 let globalGeoJsonData = null;
 
-function hasCompleteDailyTemperatureData(feature, latestAvailableHour) {
+function hasCompleteDailyData(feature, parameterKey, latestAvailableHour) {
     const hourly = feature && feature.properties ? feature.properties.Hourly : null;
     if (!hourly || typeof hourly !== 'object') return false;
 
     return Array.from({ length: latestAvailableHour + 1 }, (_, hour) => String(hour).padStart(2, '0'))
-        .every(hourKey => Number.isFinite(Number(hourly[hourKey]?.Ta)));
+        .every(hourKey => Number.isFinite(Number(hourly[hourKey]?.[parameterKey])));
 }
 
-function getMarkerStyle(feature) {
-    const latestAvailableHour = getLastAvailableHourFromData(globalGeoJsonData);
-    const hasIncompleteDailyData = !hasCompleteDailyTemperatureData(feature, latestAvailableHour);
+function getMarkerStyle(feature, parameterKey) {
+    const hasHourlyCompletenessCheck = ['Ta', 'Precip'].includes(parameterKey);
+    const latestAvailableHour = hasHourlyCompletenessCheck
+        ? getLastAvailableHourFromData(globalGeoJsonData, parameterKey)
+        : -1;
+    const hasIncompleteDailyData = hasHourlyCompletenessCheck
+        && !hasCompleteDailyData(feature, parameterKey, latestAvailableHour);
 
     return {
         radius: 3,
@@ -210,11 +214,11 @@ function getTemperatureStyle(temp) {
     return { bg: `rgba(${Math.round(lower.r + fraction * (upper.r - lower.r))}, ${Math.round(lower.g + fraction * (upper.g - lower.g))}, ${Math.round(lower.b + fraction * (upper.b - lower.b))}, 0.98)` };
 }
 
-function addDataToParamGroup(rawValue, suffix, className, positionClass, latlng, popupContent, feature, group, isElevation = false, extremeType = '') {
+function addDataToParamGroup(rawValue, suffix, className, positionClass, latlng, popupContent, feature, group, isElevation = false, extremeType = '', parameterKey = '') {
     const decimals = isElevation ? 0 : 1;
     const formatted = formatValue(rawValue, decimals);
     if (formatted !== null) {
-        const marker = L.circleMarker(latlng, getMarkerStyle(feature));
+        const marker = L.circleMarker(latlng, getMarkerStyle(feature, parameterKey));
         marker.bindPopup(popupContent);
         const direction = positionClass === 'etykieta-dol' ? 'bottom' : 'top';
 
@@ -293,10 +297,10 @@ function clearMapData() {
 let layersControl = null;
 let rankingsControl = null;
 
-function getLastAvailableHourFromData(data) {
+function getLastAvailableHourFromData(data, parameterKey = 'Ta') {
     if (!data || !Array.isArray(data.features)) return 23;
 
-    let maxTaHour = -1;
+    let maxParameterHour = -1;
     let maxAnyHour = -1;
     data.features.forEach(feature => {
         const props = feature && feature.properties ? feature.properties : null;
@@ -307,8 +311,8 @@ function getLastAvailableHourFromData(data) {
             if (!hourValue) return;
             const hourNum = Number(hourKey);
             if (!Number.isNaN(hourNum)) {
-                if (hourValue.Ta !== undefined && hourValue.Ta !== null && hourValue.Ta !== '') {
-                    maxTaHour = Math.max(maxTaHour, hourNum);
+                if (hourValue[parameterKey] !== undefined && hourValue[parameterKey] !== null && hourValue[parameterKey] !== '') {
+                    maxParameterHour = Math.max(maxParameterHour, hourNum);
                 }
                 const hasMeasurement = Object.keys(hourValue).some(key => hourValue[key] !== undefined && hourValue[key] !== null && hourValue[key] !== '');
                 if (hasMeasurement) maxAnyHour = Math.max(maxAnyHour, hourNum);
@@ -316,7 +320,7 @@ function getLastAvailableHourFromData(data) {
         });
     });
 
-    if (maxTaHour >= 0) return maxTaHour;
+    if (maxParameterHour >= 0) return maxParameterHour;
     if (maxAnyHour >= 0) return maxAnyHour;
     return 23;
 }
@@ -430,7 +434,7 @@ function renderDataForHour(hourStr) {
             };
 
             if (hourlyTa !== null) {
-                addDataToParamGroup(hourlyTa, '°C', 'temp-aktualna', 'etykieta-gora', latlng, popupContent, feature, etykietyTa, false, getEx(hourlyTa, 'Ta'));
+                addDataToParamGroup(hourlyTa, '°C', 'temp-aktualna', 'etykieta-gora', latlng, popupContent, feature, etykietyTa, false, getEx(hourlyTa, 'Ta'), 'Ta');
             }
             addDataToParamGroup(props.Tmin, '°C', 'temp-min', 'etykieta-dol', latlng, popupContent, feature, etykietyTmin, false, getEx(props.Tmin, 'Tmin'));
             addDataToParamGroup(props.Tmin_hour, '°C', 'temp-min-hour', 'etykieta-dol', latlng, popupContent, feature, etykietyTminHour, false, getEx(props.Tmin_hour, 'Tmin_hour'));
@@ -440,9 +444,9 @@ function renderDataForHour(hourStr) {
             addDataToParamGroup(props.Precip_24h, ' mm', 'opad-dobowy', 'etykieta-gora', latlng, popupContent, feature, etykietyOpady24h, false, getEx(props.Precip_24h, 'Precip_24h'));
             
             if (hourlyPrecip !== null) {
-                addDataToParamGroup(hourlyPrecip, ' mm', 'opad-10min', 'etykieta-gora', latlng, popupContent, feature, etykietyOpady10min, false, getEx(hourlyPrecip, 'Precip_10min'));
+                addDataToParamGroup(hourlyPrecip, ' mm', 'opad-10min', 'etykieta-gora', latlng, popupContent, feature, etykietyOpady10min, false, getEx(hourlyPrecip, 'Precip_10min'), 'Precip');
             } else {
-                addDataToParamGroup(props.Precip_10min, ' mm', 'opad-10min', 'etykieta-gora', latlng, popupContent, feature, etykietyOpady10min, false, getEx(props.Precip_10min, 'Precip_10min'));
+                addDataToParamGroup(props.Precip_10min, ' mm', 'opad-10min', 'etykieta-gora', latlng, popupContent, feature, etykietyOpady10min, false, getEx(props.Precip_10min, 'Precip_10min'), 'Precip');
             }
 
             addDataToParamGroup(wAvgKmh, ' km/h', 'wiatr-avg', 'etykieta-gora', latlng, popupContent, feature, etykietyWindAvg, false, getEx(wAvgKmh, 'Wind_avg'));
