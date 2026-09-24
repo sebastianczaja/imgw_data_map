@@ -107,6 +107,7 @@ let currentHourStr = '12';
 etykietyTa.addTo(map);
 
 let globalGeoJsonData = null;
+let latestAvailableHourByParameter = { Ta: 23, Precip: 23 };
 
 function hasCompleteDailyData(feature, parameterKey, latestAvailableHour) {
     const hourly = feature && feature.properties ? feature.properties.Hourly : null;
@@ -119,7 +120,7 @@ function hasCompleteDailyData(feature, parameterKey, latestAvailableHour) {
 function getMarkerStyle(feature, parameterKey) {
     const hasHourlyCompletenessCheck = ['Ta', 'Precip'].includes(parameterKey);
     const latestAvailableHour = hasHourlyCompletenessCheck
-        ? getLastAvailableHourFromData(globalGeoJsonData, parameterKey)
+        ? latestAvailableHourByParameter[parameterKey]
         : -1;
     const hasIncompleteDailyData = hasHourlyCompletenessCheck
         && !hasCompleteDailyData(feature, parameterKey, latestAvailableHour);
@@ -326,7 +327,11 @@ function getLastAvailableHourFromData(data, parameterKey = 'Ta') {
 }
 
 function processData(data, selectedHour) {
-    globalGeoJsonData = data; 
+    globalGeoJsonData = data;
+    latestAvailableHourByParameter = {
+        Ta: getLastAvailableHourFromData(data, 'Ta'),
+        Precip: getLastAvailableHourFromData(data, 'Precip')
+    };
     const hourSlider = document.getElementById('hourSlider');
     const hour = Number.isInteger(selectedHour) && selectedHour >= 0 && selectedHour <= 23
         ? selectedHour
