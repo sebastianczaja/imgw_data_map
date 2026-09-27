@@ -67,7 +67,8 @@ const map = L.map('map', {
     zoom: 6.7,
     zoomSnap: 0.1,
     layers: [openTopo],
-    zoomControl: false
+    zoomControl: false,
+    keyboard: false
 });
 
 map.setView([52.218811, 19.479699], 6.7);
