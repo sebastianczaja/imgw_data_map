@@ -1084,7 +1084,8 @@ function initTimelineUI() {
             });
 
         datePicker.addEventListener('change', () => {
-            loadDataForDate(datePicker.value);
+            const selectedHour = hourSlider ? Number(hourSlider.value) : undefined;
+            loadDataForDate(datePicker.value, selectedHour);
         });
     } else {
         loadDataForDate(todayStr);

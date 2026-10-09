@@ -31,6 +31,13 @@ def addZero(dataNumber):
         return "0" + str(dataNumber)
 przymrozki_url = f"{przymrozki_url_base}{year}-{addZero(month)}-{addZero(day)}"
 
+def parse_imgw_datetime(value):
+    parsed_datetime = parser.isoparse(value)
+    if parsed_datetime.tzinfo is None:
+        return parsed_datetime.replace(tzinfo=local_tz)
+    return parsed_datetime.astimezone(local_tz)
+
+
 stations_df = pd.read_excel(
     "all_stations.xlsx",
     dtype={"Station_id": str}
@@ -113,8 +120,7 @@ def extract_precip_data(temperature_data):
             if t["value"] is None or t["date"] is None:
                 continue
             try:
-                dt_utc = parser.isoparse(t["date"])
-                dt_local = dt_utc.astimezone(local_tz)
+                dt_local = parse_imgw_datetime(t["date"])
                 if dt_local.date() == today_local:
                     valid_precips.append(t)
             except Exception:
@@ -150,8 +156,7 @@ def extract_temperature_data(temperature_data, przymrozki_data, station_name, lo
             if t.get("value") is None or t.get("date") is None:
                 continue
             try:
-                dt_utc = parser.isoparse(t["date"])
-                dt_local = dt_utc.astimezone(local_tz)
+                dt_local = parse_imgw_datetime(t["date"])
                 if dt_local.date() == today_local:
                     valid_temps.append(t)
             except Exception:
@@ -235,8 +240,7 @@ async def process_station(session, data, przymrozki_data):
         for t in temperature_data["temperature"]:
             if t.get("value") is not None and t.get("date") is not None:
                 try:
-                    dt_utc = parser.isoparse(t["date"])
-                    dt_local = dt_utc.astimezone(local_tz)
+                    dt_local = parse_imgw_datetime(t["date"])
                     if dt_local.year == year and dt_local.month == month and dt_local.day == day:
                         hourly_data[f"{dt_local.hour:02d}"]["Ta"] = t["value"]
                 except Exception:
@@ -246,8 +250,7 @@ async def process_station(session, data, przymrozki_data):
         for p in temperature_data["precip"]:
             if p.get("value") is not None and p.get("date") is not None:
                 try:
-                    dt_utc = parser.isoparse(p["date"])
-                    dt_local = dt_utc.astimezone(local_tz)
+                    dt_local = parse_imgw_datetime(p["date"])
                     if dt_local.year == year and dt_local.month == month and dt_local.day == day:
                         hourly_data[f"{dt_local.hour:02d}"]["Precip"] = p["value"]
                 except Exception:
@@ -307,8 +310,7 @@ async def process_missing_station(session, station_info, przymrozki_data):
         for t in temperature_data["temperature"]:
             if t.get("value") is not None and t.get("date") is not None:
                 try:
-                    dt_utc = parser.isoparse(t["date"])
-                    dt_local = dt_utc.astimezone(local_tz)
+                    dt_local = parse_imgw_datetime(t["date"])
                     if dt_local.year == year and dt_local.month == month and dt_local.day == day:
                         hourly_data[f"{dt_local.hour:02d}"]["Ta"] = t["value"]
                 except Exception:
@@ -318,8 +320,7 @@ async def process_missing_station(session, station_info, przymrozki_data):
         for p in temperature_data["precip"]:
             if p.get("value") is not None and p.get("date") is not None:
                 try:
-                    dt_utc = parser.isoparse(p["date"])
-                    dt_local = dt_utc.astimezone(local_tz)
+                    dt_local = parse_imgw_datetime(p["date"])
                     if dt_local.year == year and dt_local.month == month and dt_local.day == day:
                         hourly_data[f"{dt_local.hour:02d}"]["Precip"] = p["value"]
                 except Exception:
