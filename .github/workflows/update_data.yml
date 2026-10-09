@@ -3,6 +3,7 @@ name: Hourly IMGW Data Update
 on:
   schedule:
     - cron: '*/15 * * * *'  
+    - cron: '17 3 * * *'
   workflow_dispatch:     # Pozwala uruchomić skrypt ręcznie jednym kliknięciem
 
 concurrency:
@@ -35,6 +36,10 @@ jobs:
     - name: Uruchomienie skryptu bazy danych IMGW
       run: python imgw_data.py
 
+    - name: Uzupełnienie braków z sześciotygodniowej historii IMGW
+      if: github.event_name == 'workflow_dispatch' || github.event.schedule == '17 3 * * *'
+      run: python backfill_recent_data.py
+
     - name: Automatyczny zapis bazy do repozytorium
       run: |
         git config --global user.name "IMGW Data Bot"
@@ -46,6 +51,7 @@ jobs:
 
         if [ -f "imgw_data.geojson" ] && [ -f "imgw_data/dates.json" ] && [ -f "$dated_file" ]; then
           git add imgw_data.geojson imgw_data/dates.json "$dated_file"
+          git add imgw_data/*.geojson
           if ! git diff --cached --quiet; then
             git commit -m "Aktualizacja bazy godzinowej IMGW: $(date +'%Y-%m-%d %H:%M')"
             git fetch origin main

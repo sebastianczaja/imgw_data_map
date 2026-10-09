@@ -108,27 +108,26 @@ let currentHourStr = '12';
 etykietyTa.addTo(map);
 
 let globalGeoJsonData = null;
-let latestAvailableHourByParameter = { Ta: 23, Precip: 23 };
 
-function hasCompleteDailyData(feature, parameterKey, latestAvailableHour) {
-    const hourly = feature && feature.properties ? feature.properties.Hourly : null;
-    if (!hourly || typeof hourly !== 'object') return false;
+function hasDataForSelectedHour(feature, parameterKey) {
+    const properties = feature && feature.properties ? feature.properties : null;
+    if (!properties) return false;
 
-    return Array.from({ length: latestAvailableHour + 1 }, (_, hour) => String(hour).padStart(2, '0'))
-        .every(hourKey => Number.isFinite(Number(hourly[hourKey]?.[parameterKey])));
+    const hourly = properties.Hourly;
+    const value = hourly && typeof hourly === 'object'
+        ? hourly[currentHourStr]?.[parameterKey]
+        : properties[parameterKey];
+    return value !== undefined && value !== null && value !== '' && Number.isFinite(Number(value));
 }
 
 function getMarkerStyle(feature, parameterKey) {
     const hasHourlyCompletenessCheck = ['Ta', 'Precip'].includes(parameterKey);
-    const latestAvailableHour = hasHourlyCompletenessCheck
-        ? latestAvailableHourByParameter[parameterKey]
-        : -1;
-    const hasIncompleteDailyData = hasHourlyCompletenessCheck
-        && !hasCompleteDailyData(feature, parameterKey, latestAvailableHour);
+    const hasNoDataForSelectedHour = hasHourlyCompletenessCheck
+        && !hasDataForSelectedHour(feature, parameterKey);
 
     return {
         radius: 3,
-        fillColor: hasIncompleteDailyData ? '#ffff00' : '#2ecc71',
+        fillColor: hasNoDataForSelectedHour ? '#ffff00' : '#2ecc71',
         color: '#000',
         weight: 1,
         opacity: 1,
@@ -329,10 +328,6 @@ function getLastAvailableHourFromData(data, parameterKey = 'Ta') {
 
 function processData(data, selectedHour) {
     globalGeoJsonData = data;
-    latestAvailableHourByParameter = {
-        Ta: getLastAvailableHourFromData(data, 'Ta'),
-        Precip: getLastAvailableHourFromData(data, 'Precip')
-    };
     const hourSlider = document.getElementById('hourSlider');
     const hour = Number.isInteger(selectedHour) && selectedHour >= 0 && selectedHour <= 23
         ? selectedHour
