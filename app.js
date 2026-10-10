@@ -431,8 +431,8 @@ function renderDataForHour(hourStr) {
             if (fTmax !== null) popupContent += `<p><strong>Tmax (dobowe):</strong> ${fTmax}°C</p>`;
             if (fTg !== null) popupContent += `<p><strong>Temperatura przy gruncie (Tg):</strong> ${fTg}°C</p>`;
             if (fPrecip24h !== null) popupContent += `<p><strong>Opad dobowy (24h):</strong> ${fPrecip24h} mm</p>`;
-            if (fWindAvg !== null) popupContent += `<p><strong>Wiatr średni:</strong> ${fWindAvg} km/h</p>`;
-            if (fWindMax !== null) popupContent += `<p><strong>Porywy wiatru:</strong> ${fWindMax} km/h</p>`;
+            if (fWindAvg !== null) popupContent += `<p><strong>Średnia prędkość wiatru:</strong> ${fWindAvg} km/h</p>`;
+            if (fWindMax !== null) popupContent += `<p><strong>Maksymalny poryw wiatru:</strong> ${fWindMax} km/h</p>`;
 
             const getEx = (val, field) => {
                 const roundedValue = getRoundedNumericValue(val);
@@ -469,8 +469,7 @@ function renderDataForHour(hourStr) {
     });
 
     const overlayMaps = {
-        "Nazwa stacji (Station_name)": etykietyStationName, "Wysokość (Elevation)": etykietyElevation, "Temperatura aktualna (Ta)": etykietyTa, "Temperatura minimalna (Tmin)": etykietyTmin, "Temperatura maksymalna (Tmax)": etykietyTmax, "Temperatura min. godzinowa (Tmin_hour)": etykietyTminHour, "Temperatura max. godzinowa (Tmax_hour)": etykietyTmaxHour, "Temperatura przy gruncie (Tg)": etykietyTg, "Suma opadów (Precip_24h)": etykietyOpady24h, "Opad wybranej godziny (Precip_hour)": etykietyOpady10min, "Średni wiatr (Wind_avg)": etykietyWindAvg, "Porywy wiatru (Wind_max)": etykietyWindMax
-    };
+        "Nazwa stacji (Station_name)": etykietyStationName, "Wysokość (Elevation)": etykietyElevation, "Temperatura aktualna (Ta)": etykietyTa, "Temperatura minimalna (Tmin)": etykietyTmin, "Temperatura maksymalna (Tmax)": etykietyTmax, "Temperatura min. godzinowa (Tmin_hour)": etykietyTminHour, "Temperatura max. godzinowa (Tmax_hour)": etykietyTmaxHour, "Temperatura przy gruncie (Tg)": etykietyTg, "Suma opadów (Precip_24h)": etykietyOpady24h, "Opad wybranej godziny (Precip_hour)": etykietyOpady10min, "Średnia prędkość wiatru (Wind_avg)": etykietyWindAvg, "Maksymalny poryw wiatru (Wind_max)": etykietyWindMax };
 
     if (!layersControl) {
         buildUnifiedLayerControl();
@@ -660,8 +659,8 @@ function buildUnifiedLayerControl() {
         "Temperatura przy gruncie (Tg)": etykietyTg,
         "Suma opadów (Precip_24h)": etykietyOpady24h,
         "Opad wybranej godziny (Precip_hour)": etykietyOpady10min,
-        "Średni wiatr (Wind_avg)": etykietyWindAvg,
-        "Porywy wiatru (Wind_max)": etykietyWindMax
+        "Średnia prędkość wiatru (Wind_avg)": etykietyWindAvg,
+        "Maksymalny poryw wiatru (Wind_max)": etykietyWindMax
     };
 
     layersControl = L.control({ position: 'topleft' });
