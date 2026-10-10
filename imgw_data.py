@@ -273,6 +273,52 @@ async def get_przymrozki_data_grouped_by_name(session):
         grouped_data[name].append(item)
     return grouped_data
 
+def fill_hourly_wind(temperature_data, hourly_data):
+    """Dopisuje do historii godzinowej dzisiejszego dnia (czas lokalny):
+    Wind_avg - prędkość średnia z pomiaru godzinowego (velocityObs, w razie braku średnia z velocityTel w godzinie),
+    Wind_max - największy poryw (maxVelocity) z godziny poprzedzającej pełną godzinę (h-1:00, h:00]."""
+    wind = temperature_data.get("wind") if temperature_data else None
+    if not isinstance(wind, dict):
+        return
+
+    def points(key):
+        out = []
+        for t in wind.get(key) or []:
+            if t.get("value") is None or t.get("date") is None:
+                continue
+            try:
+                out.append((parse_imgw_datetime(t["date"]), t["value"]))
+            except Exception:
+                continue
+        return out
+
+    def hour_slot(dt_local):
+        return dt_local.replace(minute=0, second=0, microsecond=0)
+
+    def is_today(dt_local):
+        return dt_local.year == year and dt_local.month == month and dt_local.day == day
+
+    obs = {hour_slot(dt): v for dt, v in points("velocityObs") if dt.minute == 0 and is_today(dt)}
+    tel_by_hour = defaultdict(list)
+    gust_by_hour = defaultdict(list)
+    for dt, v in points("velocityTel"):
+        tel_by_hour[hour_slot(dt)].append(v)
+    for dt, v in points("maxVelocity"):
+        # pomiar o pełnej godzinie należy do godziny kończącej się o tej godzinie
+        slot = hour_slot(dt)
+        if dt.minute:
+            slot = slot + timedelta(hours=1)
+        gust_by_hour[slot].append(v)
+
+    for h in range(24):
+        slot = datetime(year, month, day, tzinfo=local_tz).replace(hour=h)
+        if slot in obs:
+            hourly_data[f"{h:02d}"]["Wind_avg"] = obs[slot]
+        elif tel_by_hour.get(slot):
+            hourly_data[f"{h:02d}"]["Wind_avg"] = round(sum(tel_by_hour[slot]) / len(tel_by_hour[slot]), 1)
+        if gust_by_hour.get(slot):
+            hourly_data[f"{h:02d}"]["Wind_max"] = max(gust_by_hour[slot])
+
 async def process_station(session, data, przymrozki_data):
     temperature_url = f"{temperature_url_base}{data['kod_stacji']}&hoursInterval={hours_interval}"
     temperature_data = await fetch_json(session, temperature_url)
@@ -311,6 +357,8 @@ async def process_station(session, data, przymrozki_data):
                         hourly_data[f"{dt_local.hour:02d}"]["Precip"] = p["value"]
                 except Exception:
                     continue
+
+    fill_hourly_wind(temperature_data, hourly_data)
 
     raw_properties = {
         "Station_id": station_id,
@@ -383,6 +431,8 @@ async def process_missing_station(session, station_info, przymrozki_data):
                 except Exception:
                     continue
          
+    fill_hourly_wind(temperature_data, hourly_data)
+
     raw_properties = {
         "Station_id": station_info.get("Station_id"),
         "Station_name": station_info.get("Station_name"),
