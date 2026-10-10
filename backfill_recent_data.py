@@ -86,21 +86,20 @@ def add_missing_readings(document, station_readings, counts):
             continue
 
         hourly = properties.get("Hourly")
-        readings_by_date = station_readings.get(str(properties.get("Station_id")), {})
+        hourly_readings = station_readings.get(str(properties.get("Station_id")), {})
         if not isinstance(hourly, dict):
             continue
 
-        for readings in readings_by_date.values():
-            for hour_key, parameters in readings.items():
-                hour = hourly.get(hour_key)
-                if not isinstance(hour, dict):
-                    continue
+        for hour_key, parameters in hourly_readings.items():
+            hour = hourly.get(hour_key)
+            if not isinstance(hour, dict):
+                continue
 
-                for parameter_key, value in parameters.items():
-                    if hour.get(parameter_key) is None or hour.get(parameter_key) == "":
-                        hour[parameter_key] = value
-                        counts.setdefault(hour_key, {}).setdefault(parameter_key, 0)
-                        counts[hour_key][parameter_key] += 1
+            for parameter_key, value in parameters.items():
+                if hour.get(parameter_key) is None or hour.get(parameter_key) == "":
+                    hour[parameter_key] = value
+                    counts.setdefault(hour_key, {}).setdefault(parameter_key, 0)
+                    counts[hour_key][parameter_key] += 1
 
 
 def main():
