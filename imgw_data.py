@@ -109,19 +109,55 @@ def find_przymrozek(przymrozek_list, lon, lat):
             return item
     return None
 
+def get_meteo_day_window():
+    # Doba meteorologiczna IMGW: 08:00-08:00 (lato) / 07:00-07:00 (zima) czasu lokalnego,
+    # czyli stale 06:00-06:00 UTC.
+    now_utc = datetime.now(timezone.utc)
+    start = now_utc.replace(hour=6, minute=0, second=0, microsecond=0)
+    if start > now_utc:
+        start -= timedelta(days=1)
+    return start, start + timedelta(days=1)
+
+def extract_wind_data(temperature_data):
+    """Zwraca (max_porywu, srednia_predkosc) z bieżącej doby meteorologicznej."""
+    wind = temperature_data.get("wind") if temperature_data else None
+    if not isinstance(wind, dict):
+        return None, None
+    start, end = get_meteo_day_window()
+
+    def values_in_window(key):
+        values = []
+        for t in wind.get(key) or []:
+            if t.get("value") is None or t.get("date") is None:
+                continue
+            try:
+                dt_utc = parse_imgw_datetime(t["date"]).astimezone(timezone.utc)
+            except Exception:
+                continue
+            if start <= dt_utc <= end:
+                values.append(t["value"])
+        return values
+
+    gusts = values_in_window("maxVelocity")
+    # Telemetria (10 min) i obserwacje (godzinowe) się dublują, więc używamy jednego źródła
+    speeds = values_in_window("velocityTel") or values_in_window("velocityObs")
+    return (max(gusts) if gusts else None,
+            round(sum(speeds) / len(speeds), 1) if speeds else None)
+
 def extract_precip_data(temperature_data):
     precip_sum = None
     all_precips = None
     if temperature_data and isinstance(temperature_data.get("precip"), list) and len(temperature_data.get("precip")) > 0:
         valid_precips = []
-        today_local = datetime.now(local_tz).date()
+        met_start, met_end = get_meteo_day_window()
 
+        # Suma opadu: przedział (start, koniec], by pomiar graniczny nie liczył się podwójnie
         for t in temperature_data.get("precip", []):
             if t["value"] is None or t["date"] is None:
                 continue
             try:
-                dt_local = parse_imgw_datetime(t["date"])
-                if dt_local.date() == today_local:
+                dt_utc = parse_imgw_datetime(t["date"]).astimezone(timezone.utc)
+                if met_start < dt_utc <= met_end:
                     valid_precips.append(t)
             except Exception:
                 continue
@@ -162,13 +198,32 @@ def extract_temperature_data(temperature_data, przymrozki_data, station_name, lo
             except Exception:
                 continue
         if valid_temps:
-            min_temp_entry = min(valid_temps, key=lambda t: t["value"])
-            max_temp_entry = max(valid_temps, key=lambda t: t["value"])
+            all_temps = valid_temps
+
+        # Doba meteorologiczna IMGW: 08:00-08:00 (lato) / 07:00-07:00 (zima) czasu lokalnego,
+        # czyli stale 06:00-06:00 UTC; godziny graniczne należą do obu dób.
+        now_utc = datetime.now(timezone.utc)
+        met_start = now_utc.replace(hour=6, minute=0, second=0, microsecond=0)
+        if met_start > now_utc:
+            met_start -= timedelta(days=1)
+        met_end = met_start + timedelta(days=1)
+        met_temps = []
+        for t in temperature_data.get("temperature", []):
+            if t.get("value") is None or t.get("date") is None:
+                continue
+            try:
+                dt_utc = parse_imgw_datetime(t["date"]).astimezone(timezone.utc)
+            except Exception:
+                continue
+            if met_start <= dt_utc <= met_end:
+                met_temps.append(t)
+        if met_temps:
+            min_temp_entry = min(met_temps, key=lambda t: t["value"])
+            max_temp_entry = max(met_temps, key=lambda t: t["value"])
             temp_min_h = min_temp_entry["value"]
             temp_min_h_time = min_temp_entry["date"]
             temp_max_h = max_temp_entry["value"]
             temp_max_h_time = max_temp_entry["date"]
-            all_temps = valid_temps
 
         if przymrozki_data and przymrozki_data.get(station_name):
             przymrozki_list = przymrozki_data[station_name]
@@ -224,6 +279,7 @@ async def process_station(session, data, przymrozki_data):
 
     extracted_temps = extract_temperature_data(temperature_data, przymrozki_data, data["nazwa_stacji"], data["lon"], data["lat"])
     extracted_precips = extract_precip_data(temperature_data)
+    wind_max_day, wind_avg_day = extract_wind_data(temperature_data)
 
     station_id = data["kod_stacji"]
     station_info = stations_map.get(station_id)
@@ -276,9 +332,9 @@ async def process_station(session, data, przymrozki_data):
         "Tg_time": data['temperatura_gruntu_data'],
         "Wind_dir": float(data['wiatr_kierunek']) if data['wiatr_kierunek'] else None,
         "Wind_dir_time": data['wiatr_kierunek_data'],
-        "Wind_avg": float(data['wiatr_srednia_predkosc']) if data['wiatr_srednia_predkosc'] else None,
+        "Wind_avg": wind_avg_day if wind_avg_day is not None else (float(data['wiatr_srednia_predkosc']) if data['wiatr_srednia_predkosc'] else None),
         "Wind_avg_time": data['wiatr_srednia_predkosc_data'],
-        "Wind_max": float(data['wiatr_predkosc_maksymalna']) if data['wiatr_predkosc_maksymalna'] else None,
+        "Wind_max": wind_max_day if wind_max_day is not None else (float(data['wiatr_predkosc_maksymalna']) if data['wiatr_predkosc_maksymalna'] else None),
         "Wind_max_time": data['wiatr_predkosc_maksymalna_data'],
         "RH": float(data['wilgotnosc_wzgledna']) if data['wilgotnosc_wzgledna'] else None,
         "RH_time": data['wilgotnosc_wzgledna_data'],
@@ -304,6 +360,7 @@ async def process_missing_station(session, station_info, przymrozki_data):
 
     extracted_temps = extract_temperature_data(temperature_data, przymrozki_data, station_info.get("Station_name"), station_info.get("coordinates")[0], station_info.get("coordinates")[1])
     extracted_precips = extract_precip_data(temperature_data)
+    wind_max_day, wind_avg_day = extract_wind_data(temperature_data)
     
     hourly_data = {f"{h:02d}": {} for h in range(24)}
     if temperature_data and isinstance(temperature_data.get("temperature"), list):
@@ -342,6 +399,8 @@ async def process_missing_station(session, station_info, przymrozki_data):
         "Tmax": getattr(extracted_temps, 'temp_max', None) if extracted_temps else None,
         "Tmax_time": getattr(extracted_temps, 'temp_max_time', None) if extracted_temps else None,
         "Number_of_measurements": getattr(extracted_temps, 'all_temps_amount', None) if extracted_temps else None,
+        "Wind_avg": wind_avg_day,
+        "Wind_max": wind_max_day,
         "Precip_24h": getattr(extracted_precips, 'precip_sum', None) if extracted_precips else None,
         "Number_of_precip_measurements": getattr(extracted_precips, 'all_precip_amount', None) if extracted_precips else None,
         "Hourly": hourly_data
