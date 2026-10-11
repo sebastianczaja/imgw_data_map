@@ -267,6 +267,23 @@ function getSelectedTempParam() {
     return tempLayerMapping.find(t => t.key === activeTempParam) || tempLayerMapping[0];
 }
 
+function getFreshGroundTemperature(props) {
+    const value = getRoundedNumericValue(props?.Tg);
+    const measuredDate = typeof props?.Tg_time === 'string' ? props.Tg_time.slice(0, 10) : '';
+    const selectedDate = document.getElementById('datePicker')?.value;
+    if (value === null || !/^\d{4}-\d{2}-\d{2}$/.test(measuredDate)
+        || !/^\d{4}-\d{2}-\d{2}$/.test(selectedDate || '')) {
+        return null;
+    }
+
+    const selectedDay = Date.parse(`${selectedDate}T00:00:00Z`);
+    const measuredDay = Date.parse(`${measuredDate}T00:00:00Z`);
+    const ageInDays = (selectedDay - measuredDay) / 86400000;
+    return Number.isInteger(ageInDays) && ageInDays >= 0 && ageInDays <= 1
+        ? value
+        : null;
+}
+
 function getFeatureTempValue(props, tempKey, hourStr) {
     if (!props) return null;
     if (tempKey === 'Ta') {
@@ -291,7 +308,7 @@ function getFeatureTempValue(props, tempKey, hourStr) {
         return getRoundedNumericValue(props.Tmax_hour);
     }
     if (tempKey === 'Tg') {
-        return getRoundedNumericValue(props.Tg);
+        return getFreshGroundTemperature(props);
     }
     return getRoundedNumericValue(props[tempKey]);
 }
@@ -386,7 +403,7 @@ function renderDataForHour(hourStr) {
             updateExtreme(extremes.Tmax, p.Tmax);
             updateExtreme(extremes.Tmin_hour, p.Tmin_hour);
             updateExtreme(extremes.Tmax_hour, p.Tmax_hour);
-            updateExtreme(extremes.Tg, p.Tg);
+            updateExtreme(extremes.Tg, getFreshGroundTemperature(p));
             updateExtreme(extremes.Wind_avg, wAvg);
             updateExtreme(extremes.Wind_max, wMax);
             const roundedPrecip24h = getRoundedNumericValue(p.Precip_24h);
@@ -416,7 +433,8 @@ function renderDataForHour(hourStr) {
                   fTmax = formatValue(props.Tmax, 1), 
                   fTminHour = formatValue(props.Tmin_hour, 1), 
                   fTmaxHour = formatValue(props.Tmax_hour, 1), 
-                  fTg = formatValue(props.Tg, 1), 
+                  groundTemp = getFreshGroundTemperature(props),
+                  fTg = formatValue(groundTemp, 1), 
                   fPrecip24h = formatValue(props.Precip_24h, 1), 
                   fPrecip10min = formatValue(hourlyPrecip, 1), 
                   fWindAvg = formatValue(wAvgKmh, 1), 
@@ -455,7 +473,7 @@ function renderDataForHour(hourStr) {
             addDataToParamGroup(props.Tmin_hour, '°C', 'temp-min-hour', 'etykieta-dol', latlng, popupContent, feature, etykietyTminHour, false, getEx(props.Tmin_hour, 'Tmin_hour'));
             addDataToParamGroup(props.Tmax, '°C', 'temp-max', 'etykieta-gora', latlng, popupContent, feature, etykietyTmax, false, getEx(props.Tmax, 'Tmax'));
             addDataToParamGroup(props.Tmax_hour, '°C', 'temp-max-hour', 'etykieta-gora', latlng, popupContent, feature, etykietyTmaxHour, false, getEx(props.Tmax_hour, 'Tmax_hour'));
-            addDataToParamGroup(props.Tg, '°C', 'temp-grunt', 'etykieta-gora', latlng, popupContent, feature, etykietyTg, false, getEx(props.Tg, 'Tg'));
+            addDataToParamGroup(groundTemp, '°C', 'temp-grunt', 'etykieta-gora', latlng, popupContent, feature, etykietyTg, false, getEx(groundTemp, 'Tg'));
             addDataToParamGroup(props.Precip_24h, ' mm', 'opad-dobowy', 'etykieta-gora', latlng, popupContent, feature, etykietyOpady24h, false, getEx(props.Precip_24h, 'Precip_24h'));
             
             if (hourlyPrecip !== null) {
