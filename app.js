@@ -365,7 +365,8 @@ function renderDataForHour(hourStr) {
     globalGeoJsonData.features.forEach(f => {
         const p = f.properties;
         if (p.Status === 'ACTIVE') {
-            const wAvg = convertMetersPerSecondToKilometersPerHour(p.Wind_avg), wMax = convertMetersPerSecondToKilometersPerHour(p.Wind_max);
+            const hourlyWindAvg = p.Hourly?.[hourStr]?.Wind_avg;
+            const wAvg = convertMetersPerSecondToKilometersPerHour(hourlyWindAvg), wMax = convertMetersPerSecondToKilometersPerHour(p.Wind_max);
             const hourlyTa = p.Hourly
                 ? (p.Hourly[hourStr] && p.Hourly[hourStr].Ta !== undefined && p.Hourly[hourStr].Ta !== null ? p.Hourly[hourStr].Ta : null)
                 : (p.Ta !== undefined ? p.Ta : null);
@@ -400,7 +401,8 @@ function renderDataForHour(hourStr) {
             const props = feature.properties;
             if (props.Status !== 'ACTIVE') return null;
 
-            const wAvgKmh = convertMetersPerSecondToKilometersPerHour(props.Wind_avg), wMaxKmh = convertMetersPerSecondToKilometersPerHour(props.Wind_max);
+            const hourlyWindAvg = props.Hourly?.[hourStr]?.Wind_avg;
+            const wAvgKmh = convertMetersPerSecondToKilometersPerHour(hourlyWindAvg), wMaxKmh = convertMetersPerSecondToKilometersPerHour(props.Wind_max);
             
             let hourlyTa = props.Hourly
                 ? (props.Hourly[hourStr] && props.Hourly[hourStr].Ta !== undefined && props.Hourly[hourStr].Ta !== null ? props.Hourly[hourStr].Ta : null)
@@ -431,8 +433,8 @@ function renderDataForHour(hourStr) {
             if (fTmax !== null) popupContent += `<p><strong>Tmax (dobowe):</strong> ${fTmax}°C</p>`;
             if (fTg !== null) popupContent += `<p><strong>Temperatura przy gruncie (Tg):</strong> ${fTg}°C</p>`;
             if (fPrecip24h !== null) popupContent += `<p><strong>Opad dobowy (24h):</strong> ${fPrecip24h} mm</p>`;
-            if (fWindAvg !== null) popupContent += `<p><strong>Średnia prędkość wiatru:</strong> ${fWindAvg} km/h</p>`;
-            if (fWindMax !== null) popupContent += `<p><strong>Maksymalny poryw wiatru:</strong> ${fWindMax} km/h</p>`;
+            if (fWindAvg !== null) popupContent += `<p><strong>Średnia prędkość wiatru (${hourStr}:00):</strong> ${fWindAvg} km/h</p>`;
+            if (fWindMax !== null) popupContent += `<p><strong>Maksymalny poryw w dobie meteorologicznej:</strong> ${fWindMax} km/h</p>`;
 
             const getEx = (val, field) => {
                 const roundedValue = getRoundedNumericValue(val);

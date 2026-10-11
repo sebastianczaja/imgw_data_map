@@ -70,6 +70,68 @@ def fetch_station_history(station_id, target_dates):
                         parameter_key
                     ] = value
 
+            wind = payload.get("wind")
+            if isinstance(wind, dict):
+                wind_points = {}
+                for source_key in ("velocityObs", "velocityTel", "maxVelocity"):
+                    points = []
+                    for row in wind.get(source_key) or []:
+                        if not isinstance(row, dict) or row.get("date") is None:
+                            continue
+                        if row.get("value") is None:
+                            continue
+
+                        timestamp = datetime.fromisoformat(
+                            row["date"].replace("Z", "+00:00")
+                        )
+                        if timestamp.tzinfo is None:
+                            raise ValueError("API returned a timezone-naive timestamp")
+                        local_timestamp = timestamp.astimezone(LOCAL_TZ)
+                        date_key = local_timestamp.date().isoformat()
+                        if date_key not in target_dates:
+                            continue
+
+                        value = float(row["value"])
+                        if math.isfinite(value):
+                            points.append((local_timestamp, value))
+                    wind_points[source_key] = points
+
+                hourly_wind = {}
+                for timestamp, value in wind_points["velocityObs"]:
+                    if timestamp.minute == 0:
+                        key = (timestamp.date().isoformat(), timestamp.hour)
+                        hourly_wind.setdefault(key, {})["Wind_avg"] = value
+
+                telemetry_by_hour = {}
+                for timestamp, value in wind_points["velocityTel"]:
+                    key = (timestamp.date().isoformat(), timestamp.hour)
+                    telemetry_by_hour.setdefault(key, []).append(value)
+
+                for key, values in telemetry_by_hour.items():
+                    hourly_wind.setdefault(key, {}).setdefault(
+                        "Wind_avg", round(sum(values) / len(values), 1)
+                    )
+
+                gusts_by_hour = {}
+                for timestamp, value in wind_points["maxVelocity"]:
+                    hour = timestamp.hour + (1 if timestamp.minute else 0)
+                    date_key = timestamp.date().isoformat()
+                    if hour == 24:
+                        next_date = timestamp.date() + timedelta(days=1)
+                        date_key = next_date.isoformat()
+                        hour = 0
+                    if date_key in target_dates:
+                        key = (date_key, hour)
+                        gusts_by_hour.setdefault(key, []).append(value)
+
+                for key, values in gusts_by_hour.items():
+                    hourly_wind.setdefault(key, {})["Wind_max"] = max(values)
+
+                for (date_key, hour), parameters in hourly_wind.items():
+                    readings.setdefault(date_key, {}).setdefault(
+                        f"{hour:02d}", {}
+                    ).update(parameters)
+
             return station_id, readings, None
         except (OSError, URLError, TimeoutError, ValueError, json.JSONDecodeError) as error:
             last_error = error
