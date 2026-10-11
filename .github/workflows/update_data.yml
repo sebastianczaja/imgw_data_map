@@ -3,7 +3,7 @@ name: Hourly IMGW Data Update
 on:
   schedule:
     - cron: '*/15 * * * *'  
-    - cron: '17 3 * * *'
+    - cron: '11 4 * * *'
   workflow_dispatch:     # Pozwala uruchomić skrypt ręcznie jednym kliknięciem
 
 concurrency:
@@ -37,7 +37,7 @@ jobs:
       run: python imgw_data.py
 
     - name: Uzupełnienie braków z sześciotygodniowej historii IMGW
-      if: github.event_name == 'workflow_dispatch' || github.event.schedule == '17 3 * * *'
+      if: github.event_name == 'workflow_dispatch' || github.event.schedule == '11 4 * * *'
       run: python backfill_recent_data.py
 
     - name: Automatyczny zapis bazy do repozytorium
