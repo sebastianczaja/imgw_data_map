@@ -431,7 +431,10 @@ function renderDataForHour(hourStr) {
             if (fTmaxHour !== null) popupContent += `<p><strong>Tmax godzinowe:</strong> ${fTmaxHour}°C</p>`;
             if (fTmin !== null) popupContent += `<p><strong>Tmin (dobowe):</strong> ${fTmin}°C</p>`;
             if (fTmax !== null) popupContent += `<p><strong>Tmax (dobowe):</strong> ${fTmax}°C</p>`;
-            if (fTg !== null) popupContent += `<p><strong>Temperatura przy gruncie (Tg):</strong> ${fTg}°C</p>`;
+            if (fTg !== null) {
+                const tgTime = props.Tg_time ? `, pomiar ${escapeHtml(props.Tg_time)}` : '';
+                popupContent += `<p><strong>Temperatura przy gruncie${tgTime}:</strong> ${fTg}°C</p>`;
+            }
             if (fPrecip24h !== null) popupContent += `<p><strong>Opad dobowy (24h):</strong> ${fPrecip24h} mm</p>`;
             if (fWindAvg !== null) popupContent += `<p><strong>Średnia prędkość wiatru (${hourStr}:00):</strong> ${fWindAvg} km/h</p>`;
             if (fWindMax !== null) popupContent += `<p><strong>Maksymalny poryw w dobie meteorologicznej:</strong> ${fWindMax} km/h</p>`;

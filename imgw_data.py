@@ -37,6 +37,24 @@ def parse_imgw_datetime(value):
         return parsed_datetime.replace(tzinfo=local_tz)
     return parsed_datetime.astimezone(local_tz)
 
+def extract_ground_temperature(data):
+    value = data.get("temperatura_gruntu")
+    timestamp = data.get("temperatura_gruntu_data")
+    if value is None or timestamp is None:
+        return None, None
+
+    try:
+        temperature = float(value)
+        measured_at = parse_imgw_datetime(timestamp)
+    except (TypeError, ValueError, OverflowError):
+        return None, None
+
+    age = datetime.now(local_tz) - measured_at
+    if not math.isfinite(temperature) or age > timedelta(hours=24) or age < -timedelta(minutes=5):
+        return None, None
+
+    return temperature, timestamp
+
 
 stations_df = pd.read_excel(
     "all_stations.xlsx",
@@ -326,6 +344,7 @@ async def process_station(session, data, przymrozki_data):
     extracted_temps = extract_temperature_data(temperature_data, przymrozki_data, data["nazwa_stacji"], data["lon"], data["lat"])
     extracted_precips = extract_precip_data(temperature_data)
     wind_max_day, wind_avg_day = extract_wind_data(temperature_data)
+    ground_temp, ground_temp_time = extract_ground_temperature(data)
 
     station_id = data["kod_stacji"]
     station_info = stations_map.get(station_id)
@@ -376,8 +395,8 @@ async def process_station(session, data, przymrozki_data):
         "Tmax": getattr(extracted_temps, 'temp_max', None) if extracted_temps else None,
         "Tmax_time": getattr(extracted_temps, 'temp_max_time', None) if extracted_temps else None,
         "Number_of_measurements": getattr(extracted_temps, 'all_temps_amount', None) if extracted_temps else None,
-        "Tg": float(data['temperatura_gruntu']) if data['temperatura_gruntu'] else None,
-        "Tg_time": data['temperatura_gruntu_data'],
+        "Tg": ground_temp,
+        "Tg_time": ground_temp_time,
         "Wind_dir": float(data['wiatr_kierunek']) if data['wiatr_kierunek'] else None,
         "Wind_dir_time": data['wiatr_kierunek_data'],
         "Wind_avg": wind_avg_day if wind_avg_day is not None else (float(data['wiatr_srednia_predkosc']) if data['wiatr_srednia_predkosc'] else None),
