@@ -648,7 +648,7 @@ function loadDataForDate(dateStr, selectedHour) {
     clearMapData();
     if (!dateStr) return;
     const path = `imgw_data/${dateStr}.geojson`;
-    fetch(path)
+    fetch(`${path}?t=${Date.now()}`, { cache: 'no-store' })
         .then(r => {
             if (!r.ok) throw new Error('no file');
             return r.json();
@@ -1091,7 +1091,7 @@ function initTimelineUI() {
     if (datePicker) {
         datePicker.value = todayStr;
 
-        fetch('imgw_data/dates.json')
+        fetch(`imgw_data/dates.json?t=${Date.now()}`, { cache: 'no-store' })
             .then(r => (r.ok ? r.json() : null))
             .then(dates => {
                 let initialDate = todayStr;
