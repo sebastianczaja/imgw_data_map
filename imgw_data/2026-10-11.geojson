@@ -56605,11 +56605,13 @@
                         "Wind_max": 6.7
                     },
                     "19": {
-                        "Wind_max": 4.9
+                        "Wind_max": 4.9,
+                        "Wind_avg": 4.9
                     },
                     "20": {
                         "Ta": 2.0,
-                        "Wind_avg": 5.6
+                        "Wind_avg": 5.6,
+                        "Wind_max": 8.1
                     },
                     "21": {
                         "Ta": 1.83,
