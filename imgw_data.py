@@ -12,6 +12,11 @@ import ast
 import zoneinfo
 import os
 
+MAX_CONCURRENT_REQUESTS = 20
+REQUEST_TIMEOUT_SECONDS = 15
+MAX_FETCH_ATTEMPTS = 3
+request_semaphore = asyncio.Semaphore(MAX_CONCURRENT_REQUESTS)
+
 # 🕒 Automatyczne pobieranie aktualnej daty w Polsce
 local_tz = zoneinfo.ZoneInfo("Europe/Warsaw")
 now_local = datetime.now(local_tz)
@@ -123,8 +128,15 @@ def find_przymrozek(przymrozek_list, lon, lat):
     if len(przymrozek_list) == 1:
         return przymrozek_list[0]
     for item in przymrozek_list:
-        if item.get('lon') == lon and item.get('lat') == lat:
-            return item
+        try:
+            item_lon = float(item.get("lon"))
+            item_lat = float(item.get("lat"))
+            if math.isclose(item_lon, float(lon), rel_tol=0, abs_tol=0.00001) and math.isclose(
+                item_lat, float(lat), rel_tol=0, abs_tol=0.00001
+            ):
+                return item
+        except (TypeError, ValueError):
+            continue
     return None
 
 def get_meteo_day_window():
@@ -275,11 +287,52 @@ def extract_temperature_data(temperature_data, przymrozki_data, station_name, lo
     )
 
 async def fetch_json(session, url):
-    try:
-        async with session.get(url, headers={"User-Agent": "Mozilla/5.0"}, timeout=5) as response:
-            return await response.json() if response.status == 200 else None
-    except Exception:
-        return None
+    last_error = None
+    for attempt in range(1, MAX_FETCH_ATTEMPTS + 1):
+        try:
+            async with request_semaphore:
+                async with session.get(
+                    url,
+                    headers={"User-Agent": "Mozilla/5.0"},
+                    timeout=aiohttp.ClientTimeout(total=REQUEST_TIMEOUT_SECONDS),
+                ) as response:
+                    if response.status == 200:
+                        return await response.json()
+
+                    last_error = RuntimeError(f"HTTP {response.status}")
+                    if response.status != 429 and response.status < 500:
+                        break
+        except (aiohttp.ClientError, asyncio.TimeoutError, json.JSONDecodeError) as error:
+            last_error = error
+
+        if attempt < MAX_FETCH_ATTEMPTS:
+            await asyncio.sleep(attempt)
+
+    raise RuntimeError(
+        f"Nie udało się pobrać danych IMGW po {attempt} próbach: {url} "
+        f"({type(last_error).__name__}: {last_error})"
+    ) from last_error
+
+async def gather_station_features(tasks, description):
+    async def capture_result(task):
+        try:
+            return await task, None
+        except Exception as error:
+            return None, error
+
+    results = await tqdm_asyncio.gather(
+        *(capture_result(task) for task in tasks),
+        desc=description
+    )
+    failures = [error for _, error in results if error is not None]
+    if failures:
+        for error in failures:
+            print(f"Błąd pobierania stacji: {error}")
+        raise RuntimeError(
+            f"Przerwano aktualizację: {len(failures)} pobrań stacji zakończyło się błędem."
+        ) from failures[0]
+
+    return [result for result, _ in results]
 
 async def get_przymrozki_data_grouped_by_name(session):
     data = await fetch_przymrozki_json(przymrozki_url)
@@ -340,6 +393,12 @@ def fill_hourly_wind(temperature_data, hourly_data):
 async def process_station(session, data, przymrozki_data):
     temperature_url = f"{temperature_url_base}{data['kod_stacji']}&hoursInterval={hours_interval}"
     temperature_data = await fetch_json(session, temperature_url)
+    if not isinstance(temperature_data, dict) or not any(
+        key in temperature_data for key in ("temperature", "precip", "wind")
+    ):
+        raise ValueError(
+            f"IMGW zwróciło nieprawidłowy profil stacji {data['kod_stacji']}."
+        )
 
     extracted_temps = extract_temperature_data(temperature_data, przymrozki_data, data["nazwa_stacji"], data["lon"], data["lat"])
     extracted_precips = extract_precip_data(temperature_data)
@@ -424,6 +483,12 @@ async def process_station(session, data, przymrozki_data):
 async def process_missing_station(session, station_info, przymrozki_data):
     temperature_url = f"{temperature_url_base}{station_info.get('Station_id')}&hoursInterval={hours_interval}"
     temperature_data = await fetch_json(session, temperature_url)
+    if not isinstance(temperature_data, dict) or not any(
+        key in temperature_data for key in ("temperature", "precip", "wind")
+    ):
+        raise ValueError(
+            f"IMGW zwróciło nieprawidłowy profil stacji {station_info.get('Station_id')}."
+        )
 
     extracted_temps = extract_temperature_data(temperature_data, przymrozki_data, station_info.get("Station_name"), station_info.get("coordinates")[0], station_info.get("coordinates")[1])
     extracted_precips = extract_precip_data(temperature_data)
@@ -501,8 +566,7 @@ async def main():
     async with aiohttp.ClientSession() as session:
         imgw_data = await fetch_json(session, url=url)
         if not imgw_data:
-            print("Błąd pobierania danych IMGW.")
-            return
+            raise RuntimeError("IMGW zwróciło pustą listę danych stacji.")
 
         przymrozki_data = await get_przymrozki_data_grouped_by_name(session)
         if not przymrozki_data:
@@ -510,7 +574,7 @@ async def main():
             przymrozki_data = None
 
         tasks = [process_station(session, data, przymrozki_data) for data in imgw_data]
-        features = await tqdm_asyncio.gather(*tasks, desc="Pobieranie danych stacji")
+        features = await gather_station_features(tasks, "Pobieranie danych stacji")
         features = [f for f in features if f is not None]
 
         active_station_ids = {sid for sid, info in stations_map.items() if info["Status"] == "ACTIVE"}
@@ -521,7 +585,10 @@ async def main():
 
         if missing_stations:
             missing_tasks = [process_missing_station(session, station, przymrozki_data) for station in missing_stations]
-            missing_features = await tqdm_asyncio.gather(*missing_tasks, desc="Pobieranie brakujących stacji")
+            missing_features = await gather_station_features(
+                missing_tasks,
+                "Pobieranie brakujących stacji"
+            )
             features.extend(missing_features)
 
         closed_stations = [station_info for station_info in stations_map.values() if station_info["Status"] == "CLOSED" and station_info.get("coordinates")]
@@ -539,17 +606,11 @@ async def main():
 
         payload = {"type": "FeatureCollection", "features": features}
 
-        try:
-            with open(dated_path, "w", encoding="utf-8") as f:
-                json.dump(payload, f, ensure_ascii=False, indent=4)
-        except Exception as e:
-            print(f"Błąd zapisu datowanego pliku {dated_path}: {e}")
+        with open(dated_path, "w", encoding="utf-8") as f:
+            json.dump(payload, f, ensure_ascii=False, indent=4)
 
-        try:
-            with open(latest_path, "w", encoding="utf-8") as f:
-                json.dump(payload, f, ensure_ascii=False, indent=4)
-        except Exception as e:
-            print(f"Błąd zapisu pliku {latest_path}: {e}")
+        with open(latest_path, "w", encoding="utf-8") as f:
+            json.dump(payload, f, ensure_ascii=False, indent=4)
 
         dates_file = os.path.join(out_dir, "dates.json")
         dates = []
@@ -565,12 +626,10 @@ async def main():
         if date_str not in dates:
             dates.append(date_str)
             dates = sorted(dates, reverse=True)
-            try:
-                with open(dates_file, "w", encoding="utf-8") as df:
-                    json.dump(dates, df, ensure_ascii=False, indent=2)
-            except Exception as e:
-                print(f"Błąd zapisu indeksu dat {dates_file}: {e}")
+            with open(dates_file, "w", encoding="utf-8") as df:
+                json.dump(dates, df, ensure_ascii=False, indent=2)
 
         print(f"Pliki zaktualizowane: {dated_path} oraz {latest_path}")
 
-asyncio.run(main())
+if __name__ == "__main__":
+    asyncio.run(main())
