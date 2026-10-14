@@ -123,12 +123,14 @@ function hasCompleteHourlyData(feature, parameterKey, latestAvailableHour) {
 }
 
 function getMarkerStyle(feature, parameterKey) {
-    const hasHourlyCompletenessCheck = ['Ta', 'Precip'].includes(parameterKey);
-    const latestAvailableHour = hasHourlyCompletenessCheck
-        ? latestAvailableHourByParameter[parameterKey]
+    const completenessParameter = ['Ta', 'Tmin_hour', 'Tmax_hour'].includes(parameterKey)
+        ? 'Ta'
+        : parameterKey === 'Precip' ? 'Precip' : null;
+    const latestAvailableHour = completenessParameter
+        ? latestAvailableHourByParameter[completenessParameter]
         : -1;
-    const hasIncompleteHourlyData = hasHourlyCompletenessCheck
-        && !hasCompleteHourlyData(feature, parameterKey, latestAvailableHour);
+    const hasIncompleteHourlyData = completenessParameter !== null
+        && !hasCompleteHourlyData(feature, completenessParameter, latestAvailableHour);
 
     return {
         radius: 3,
