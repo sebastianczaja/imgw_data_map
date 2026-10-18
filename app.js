@@ -1029,7 +1029,11 @@ function initTimelineUI() {
     }
 
     const now = new Date();
-    const todayStr = now.toISOString().slice(0, 10);
+    const todayStr = [
+        now.getFullYear(),
+        String(now.getMonth() + 1).padStart(2, '0'),
+        String(now.getDate()).padStart(2, '0')
+    ].join('-');
 
     if (hourSlider) {
         hourSlider.addEventListener('input', (e) => {
@@ -1096,15 +1100,11 @@ function initTimelineUI() {
         fetch(`imgw_data/dates.json?t=${Date.now()}`, { cache: 'no-store' })
             .then(r => (r.ok ? r.json() : null))
             .then(dates => {
-                let initialDate = todayStr;
-                if (Array.isArray(dates) && dates.length > 0) {
+                if (Array.isArray(dates)) {
                     availableDates = dates;
-                    if (!dates.includes(todayStr)) {
-                        initialDate = dates[0];
-                    }
                 }
-                datePicker.value = initialDate;
-                loadDataForDate(initialDate);
+                datePicker.value = todayStr;
+                loadDataForDate(todayStr);
             })
             .catch(() => {
                 datePicker.value = todayStr;

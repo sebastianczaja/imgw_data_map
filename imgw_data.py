@@ -344,8 +344,8 @@ async def get_przymrozki_data_grouped_by_name(session):
         grouped_data[name].append(item)
     return grouped_data
 
-def fill_hourly_wind(temperature_data, hourly_data):
-    """Dopisuje do historii godzinowej dzisiejszego dnia (czas lokalny):
+def fill_hourly_wind(temperature_data, hourly_data, target_date):
+    """Dopisuje do historii godzinowej wybranego dnia (czas lokalny):
     Wind_avg - prędkość średnia z pomiaru godzinowego (velocityObs, w razie braku średnia z velocityTel w godzinie),
     Wind_max - największy poryw (maxVelocity) z godziny poprzedzającej pełną godzinę (h-1:00, h:00]."""
     wind = temperature_data.get("wind") if temperature_data else None
@@ -366,10 +366,11 @@ def fill_hourly_wind(temperature_data, hourly_data):
     def hour_slot(dt_local):
         return dt_local.replace(minute=0, second=0, microsecond=0)
 
-    def is_today(dt_local):
-        return dt_local.year == year and dt_local.month == month and dt_local.day == day
-
-    obs = {hour_slot(dt): v for dt, v in points("velocityObs") if dt.minute == 0 and is_today(dt)}
+    obs = {
+        hour_slot(dt): v
+        for dt, v in points("velocityObs")
+        if dt.minute == 0 and dt.date() == target_date
+    }
     tel_by_hour = defaultdict(list)
     gust_by_hour = defaultdict(list)
     for dt, v in points("velocityTel"):
@@ -382,7 +383,13 @@ def fill_hourly_wind(temperature_data, hourly_data):
         gust_by_hour[slot].append(v)
 
     for h in range(24):
-        slot = datetime(year, month, day, tzinfo=local_tz).replace(hour=h)
+        slot = datetime(
+            target_date.year,
+            target_date.month,
+            target_date.day,
+            hour=h,
+            tzinfo=local_tz,
+        )
         if slot in obs:
             hourly_data[f"{h:02d}"]["Wind_avg"] = obs[slot]
         elif tel_by_hour.get(slot):
@@ -390,7 +397,53 @@ def fill_hourly_wind(temperature_data, hourly_data):
         if gust_by_hour.get(slot):
             hourly_data[f"{h:02d}"]["Wind_max"] = max(gust_by_hour[slot])
 
-async def process_station(session, data, przymrozki_data):
+def build_hourly_data(temperature_data, target_date):
+    hourly_data = {f"{hour:02d}": {} for hour in range(24)}
+    for source_key, parameter_key in (("temperature", "Ta"), ("precip", "Precip")):
+        readings = temperature_data.get(source_key)
+        if not isinstance(readings, list):
+            continue
+        for reading in readings:
+            if not isinstance(reading, dict):
+                continue
+            if reading.get("value") is None or reading.get("date") is None:
+                continue
+            try:
+                measured_at = parse_imgw_datetime(reading["date"])
+            except (TypeError, ValueError, OverflowError):
+                continue
+            if measured_at.date() == target_date:
+                hourly_data[f"{measured_at.hour:02d}"][parameter_key] = reading["value"]
+
+    fill_hourly_wind(temperature_data, hourly_data, target_date)
+    return hourly_data
+
+def has_hourly_readings(hourly_data):
+    return any(values for values in hourly_data.values())
+
+def add_missing_hourly_readings(document, readings_by_station):
+    additions = 0
+    for feature in document.get("features", []):
+        properties = feature.get("properties", {})
+        if properties.get("Status") != "ACTIVE":
+            continue
+
+        station_readings = readings_by_station.get(str(properties.get("Station_id")), {})
+        hourly = properties.get("Hourly")
+        if not isinstance(hourly, dict):
+            continue
+
+        for hour_key, parameters in station_readings.items():
+            hour = hourly.get(hour_key)
+            if not isinstance(hour, dict):
+                continue
+            for parameter_key, value in parameters.items():
+                if hour.get(parameter_key) is None or hour.get(parameter_key) == "":
+                    hour[parameter_key] = value
+                    additions += 1
+    return additions
+
+async def process_station(session, data, przymrozki_data, previous_date, previous_day_readings):
     temperature_url = f"{temperature_url_base}{data['kod_stacji']}&hoursInterval={hours_interval}"
     temperature_data = await fetch_json(session, temperature_url)
     if not isinstance(temperature_data, dict) or not any(
@@ -414,29 +467,10 @@ async def process_station(session, data, przymrozki_data):
     coords = station_info["coordinates"]
 
     # Budowanie pełnej historii godzinowej dla dzisiejszego dnia (lokalny czas w Polsce)
-    hourly_data = {f"{h:02d}": {} for h in range(24)}
-    
-    if temperature_data and isinstance(temperature_data.get("temperature"), list):
-        for t in temperature_data["temperature"]:
-            if t.get("value") is not None and t.get("date") is not None:
-                try:
-                    dt_local = parse_imgw_datetime(t["date"])
-                    if dt_local.year == year and dt_local.month == month and dt_local.day == day:
-                        hourly_data[f"{dt_local.hour:02d}"]["Ta"] = t["value"]
-                except Exception:
-                    continue
-
-    if temperature_data and isinstance(temperature_data.get("precip"), list):
-        for p in temperature_data["precip"]:
-            if p.get("value") is not None and p.get("date") is not None:
-                try:
-                    dt_local = parse_imgw_datetime(p["date"])
-                    if dt_local.year == year and dt_local.month == month and dt_local.day == day:
-                        hourly_data[f"{dt_local.hour:02d}"]["Precip"] = p["value"]
-                except Exception:
-                    continue
-
-    fill_hourly_wind(temperature_data, hourly_data)
+    hourly_data = build_hourly_data(temperature_data, now_local.date())
+    previous_hourly_data = build_hourly_data(temperature_data, previous_date)
+    if has_hourly_readings(previous_hourly_data):
+        previous_day_readings[str(station_info["Station_id"])] = previous_hourly_data
 
     raw_properties = {
         "Station_id": station_id,
@@ -480,7 +514,9 @@ async def process_station(session, data, przymrozki_data):
         "properties": properties
     }
 
-async def process_missing_station(session, station_info, przymrozki_data):
+async def process_missing_station(
+    session, station_info, przymrozki_data, previous_date, previous_day_readings
+):
     temperature_url = f"{temperature_url_base}{station_info.get('Station_id')}&hoursInterval={hours_interval}"
     temperature_data = await fetch_json(session, temperature_url)
     if not isinstance(temperature_data, dict) or not any(
@@ -494,28 +530,10 @@ async def process_missing_station(session, station_info, przymrozki_data):
     extracted_precips = extract_precip_data(temperature_data)
     wind_max_day, wind_avg_day = extract_wind_data(temperature_data)
     
-    hourly_data = {f"{h:02d}": {} for h in range(24)}
-    if temperature_data and isinstance(temperature_data.get("temperature"), list):
-        for t in temperature_data["temperature"]:
-            if t.get("value") is not None and t.get("date") is not None:
-                try:
-                    dt_local = parse_imgw_datetime(t["date"])
-                    if dt_local.year == year and dt_local.month == month and dt_local.day == day:
-                        hourly_data[f"{dt_local.hour:02d}"]["Ta"] = t["value"]
-                except Exception:
-                    continue
-
-    if temperature_data and isinstance(temperature_data.get("precip"), list):
-        for p in temperature_data["precip"]:
-            if p.get("value") is not None and p.get("date") is not None:
-                try:
-                    dt_local = parse_imgw_datetime(p["date"])
-                    if dt_local.year == year and dt_local.month == month and dt_local.day == day:
-                        hourly_data[f"{dt_local.hour:02d}"]["Precip"] = p["value"]
-                except Exception:
-                    continue
-         
-    fill_hourly_wind(temperature_data, hourly_data)
+    hourly_data = build_hourly_data(temperature_data, now_local.date())
+    previous_hourly_data = build_hourly_data(temperature_data, previous_date)
+    if has_hourly_readings(previous_hourly_data):
+        previous_day_readings[str(station_info.get("Station_id"))] = previous_hourly_data
 
     raw_properties = {
         "Station_id": station_info.get("Station_id"),
@@ -563,6 +581,13 @@ def process_closed_station(station_info):
     }
 
 async def main():
+    previous_date = now_local.date() - timedelta(days=1)
+    previous_date_str = previous_date.isoformat()
+    previous_date_path = os.path.join(
+        "imgw_data", f"{previous_date_str}.geojson"
+    )
+    previous_day_readings = {}
+
     async with aiohttp.ClientSession() as session:
         imgw_data = await fetch_json(session, url=url)
         if not imgw_data:
@@ -573,7 +598,12 @@ async def main():
             print("Błąd pobierania danych przymrozków lub brak danych na dzisiaj.")
             przymrozki_data = None
 
-        tasks = [process_station(session, data, przymrozki_data) for data in imgw_data]
+        tasks = [
+            process_station(
+                session, data, przymrozki_data, previous_date, previous_day_readings
+            )
+            for data in imgw_data
+        ]
         features = await gather_station_features(tasks, "Pobieranie danych stacji")
         features = [f for f in features if f is not None]
 
@@ -584,7 +614,16 @@ async def main():
         missing_stations = [stations_map[sid] for sid in missing_station_ids if stations_map[sid]["coordinates"]]
 
         if missing_stations:
-            missing_tasks = [process_missing_station(session, station, przymrozki_data) for station in missing_stations]
+            missing_tasks = [
+                process_missing_station(
+                    session,
+                    station,
+                    przymrozki_data,
+                    previous_date,
+                    previous_day_readings,
+                )
+                for station in missing_stations
+            ]
             missing_features = await gather_station_features(
                 missing_tasks,
                 "Pobieranie brakujących stacji"
@@ -611,6 +650,26 @@ async def main():
 
         with open(latest_path, "w", encoding="utf-8") as f:
             json.dump(payload, f, ensure_ascii=False, indent=4)
+
+        if previous_day_readings and os.path.isfile(previous_date_path):
+            with open(previous_date_path, "r", encoding="utf-8") as f:
+                previous_payload = json.load(f)
+            additions = add_missing_hourly_readings(
+                previous_payload, previous_day_readings
+            )
+            if additions:
+                temporary_path = f"{previous_date_path}.tmp"
+                try:
+                    with open(temporary_path, "w", encoding="utf-8") as f:
+                        json.dump(previous_payload, f, ensure_ascii=False, indent=4)
+                    os.replace(temporary_path, previous_date_path)
+                finally:
+                    if os.path.exists(temporary_path):
+                        os.remove(temporary_path)
+                print(
+                    f"Uzupełniono {additions} pomiarów godzinowych "
+                    f"w pliku {previous_date_path}."
+                )
 
         dates_file = os.path.join(out_dir, "dates.json")
         dates = []
