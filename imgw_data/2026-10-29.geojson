@@ -33926,32 +33926,64 @@
                         "Wind_max": 0.0
                     },
                     "05": {
-                        "Wind_max": 0.0
+                        "Wind_max": 0.0,
+                        "Ta": 1.93,
+                        "Wind_avg": 0.1
                     },
-                    "06": {},
-                    "07": {},
-                    "08": {},
-                    "09": {},
-                    "10": {},
-                    "11": {},
+                    "06": {
+                        "Ta": 2.93,
+                        "Wind_avg": 0.3,
+                        "Wind_max": 2.4
+                    },
+                    "07": {
+                        "Ta": 3.02,
+                        "Wind_avg": 0.9,
+                        "Wind_max": 3.8
+                    },
+                    "08": {
+                        "Ta": 2.92,
+                        "Wind_avg": 1.0,
+                        "Wind_max": 3.7
+                    },
+                    "09": {
+                        "Ta": 3.04,
+                        "Wind_avg": 1.7,
+                        "Wind_max": 4.2
+                    },
+                    "10": {
+                        "Ta": 2.75,
+                        "Wind_avg": 1.2,
+                        "Wind_max": 5.4
+                    },
+                    "11": {
+                        "Ta": 2.1,
+                        "Wind_avg": 1.0,
+                        "Wind_max": 4.7
+                    },
                     "12": {
-                        "Wind_avg": 0.9
+                        "Wind_avg": 0.9,
+                        "Ta": 1.57,
+                        "Wind_max": 3.6
                     },
                     "13": {
                         "Wind_avg": 0.7,
-                        "Wind_max": 4.1
+                        "Wind_max": 4.1,
+                        "Ta": 2.53
                     },
                     "14": {
                         "Wind_avg": 0.4,
-                        "Wind_max": 3.5
+                        "Wind_max": 3.5,
+                        "Ta": 2.42
                     },
                     "15": {
                         "Wind_avg": 0.5,
-                        "Wind_max": 2.6
+                        "Wind_max": 2.6,
+                        "Ta": 1.68
                     },
                     "16": {
                         "Wind_avg": 1.2,
-                        "Wind_max": 3.0
+                        "Wind_max": 3.0,
+                        "Ta": 1.01
                     },
                     "17": {
                         "Ta": 1.17,
