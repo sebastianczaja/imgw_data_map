@@ -10407,14 +10407,18 @@
                     "19": {
                         "Precip": 0.1
                     },
-                    "20": {},
+                    "20": {
+                        "Precip": 0.1
+                    },
                     "21": {
                         "Precip": 0.0
                     },
                     "22": {
                         "Precip": 0.0
                     },
-                    "23": {}
+                    "23": {
+                        "Precip": 0.0
+                    }
                 }
             }
         },
@@ -22758,13 +22762,21 @@
                     "14": {},
                     "15": {},
                     "16": {},
-                    "17": {},
+                    "17": {
+                        "Precip": 0.0
+                    },
                     "18": {},
                     "19": {},
-                    "20": {},
+                    "20": {
+                        "Precip": 8.7
+                    },
                     "21": {},
-                    "22": {},
-                    "23": {}
+                    "22": {
+                        "Precip": 0.0
+                    },
+                    "23": {
+                        "Precip": 0.0
+                    }
                 }
             }
         },
@@ -26319,7 +26331,8 @@
                     "05": {
                         "Precip": 0.0,
                         "Wind_avg": 0.0,
-                        "Wind_max": 0.0
+                        "Wind_max": 0.0,
+                        "Ta": 13.49
                     },
                     "06": {
                         "Ta": 13.83,
@@ -27576,7 +27589,8 @@
                     "12": {
                         "Precip": 0.0,
                         "Wind_avg": 0.7,
-                        "Wind_max": 3.7
+                        "Wind_max": 3.7,
+                        "Ta": 22.04
                     },
                     "13": {
                         "Ta": 22.94,
@@ -27622,12 +27636,14 @@
                     "20": {
                         "Precip": 0.0,
                         "Wind_avg": 3.6,
-                        "Wind_max": 6.9
+                        "Wind_max": 6.9,
+                        "Ta": 22.06
                     },
                     "21": {
                         "Precip": 0.0,
                         "Wind_avg": 2.8,
-                        "Wind_max": 6.4
+                        "Wind_max": 6.4,
+                        "Ta": 20.63
                     },
                     "22": {
                         "Ta": 17.58,
@@ -33927,75 +33943,110 @@
                     "06": {
                         "Precip": 0.0,
                         "Wind_avg": 0.4,
-                        "Wind_max": 3.3
+                        "Wind_max": 3.3,
+                        "Ta": 12.62
                     },
                     "07": {
                         "Wind_avg": 0.0,
-                        "Wind_max": 2.4
+                        "Wind_max": 2.4,
+                        "Ta": 15.65,
+                        "Precip": 0.0
                     },
                     "08": {
                         "Wind_avg": 2.9,
-                        "Wind_max": 0.0
+                        "Wind_max": 0.0,
+                        "Ta": 14.86,
+                        "Precip": 0.0
                     },
                     "09": {
                         "Wind_avg": 1.3,
-                        "Wind_max": 6.6
+                        "Wind_max": 6.6,
+                        "Ta": 12.33,
+                        "Precip": 4.0
                     },
                     "10": {
                         "Wind_avg": 0.6,
-                        "Wind_max": 3.6
+                        "Wind_max": 3.6,
+                        "Ta": 14.73,
+                        "Precip": 2.1
                     },
                     "11": {
                         "Wind_avg": 2.7,
-                        "Wind_max": 4.4
+                        "Wind_max": 4.4,
+                        "Ta": 17.42,
+                        "Precip": 0.0
                     },
                     "12": {
                         "Wind_avg": 4.6,
-                        "Wind_max": 7.2
+                        "Wind_max": 7.2,
+                        "Ta": 17.37,
+                        "Precip": 0.0
                     },
                     "13": {
                         "Wind_avg": 3.9,
-                        "Wind_max": 7.9
+                        "Wind_max": 7.9,
+                        "Ta": 17.63,
+                        "Precip": 0.0
                     },
                     "14": {
                         "Wind_avg": 3.3,
-                        "Wind_max": 7.9
+                        "Wind_max": 7.9,
+                        "Ta": 20.02,
+                        "Precip": 0.0
                     },
                     "15": {
                         "Wind_avg": 2.7,
-                        "Wind_max": 7.4
+                        "Wind_max": 7.4,
+                        "Ta": 19.84,
+                        "Precip": 0.0
                     },
                     "16": {
                         "Wind_avg": 3.9,
-                        "Wind_max": 7.1
+                        "Wind_max": 7.1,
+                        "Ta": 19.73,
+                        "Precip": 0.0
                     },
                     "17": {
                         "Wind_avg": 2.5,
-                        "Wind_max": 8.0
+                        "Wind_max": 8.0,
+                        "Ta": 18.34,
+                        "Precip": 0.0
                     },
                     "18": {
                         "Wind_avg": 4.1,
-                        "Wind_max": 6.1
+                        "Wind_max": 6.1,
+                        "Ta": 17.51,
+                        "Precip": 0.0
                     },
                     "19": {
                         "Wind_avg": 4.2,
-                        "Wind_max": 10.2
+                        "Wind_max": 10.2,
+                        "Ta": 15.32,
+                        "Precip": 0.2
                     },
                     "20": {
                         "Wind_avg": 4.0,
-                        "Wind_max": 11.9
+                        "Wind_max": 11.9,
+                        "Ta": 13.07,
+                        "Precip": 5.6
                     },
                     "21": {
                         "Wind_avg": 5.0,
-                        "Wind_max": 7.9
+                        "Wind_max": 7.9,
+                        "Ta": 12.06,
+                        "Precip": 7.4
                     },
                     "22": {
                         "Wind_avg": 3.8,
-                        "Wind_max": 9.8
+                        "Wind_max": 9.8,
+                        "Ta": 11.37,
+                        "Precip": 2.4
                     },
                     "23": {
                         "Wind_avg": 3.0,
-                        "Wind_max": 8.6
+                        "Wind_max": 8.6,
+                        "Ta": 10.89,
+                        "Precip": 0.9
                     }
                 }
             }
@@ -55687,77 +55738,92 @@
                     "09": {
                         "Ta": 19.2,
                         "Wind_avg": 1.8,
-                        "Wind_max": 4.1
+                        "Wind_max": 4.1,
+                        "Precip": 0.0
                     },
                     "10": {
                         "Ta": 20.4,
                         "Wind_avg": 1.1,
-                        "Wind_max": 3.7
+                        "Wind_max": 3.7,
+                        "Precip": 0.0
                     },
                     "11": {
                         "Ta": 22.2,
                         "Wind_avg": 1.5,
-                        "Wind_max": 3.4
+                        "Wind_max": 3.4,
+                        "Precip": 0.0
                     },
                     "12": {
                         "Ta": 23.5,
                         "Wind_avg": 1.1,
-                        "Wind_max": 4.3
+                        "Wind_max": 4.3,
+                        "Precip": 0.0
                     },
                     "13": {
                         "Ta": 24.0,
                         "Wind_avg": 1.1,
-                        "Wind_max": 2.5
+                        "Wind_max": 2.5,
+                        "Precip": 0.0
                     },
                     "14": {
                         "Ta": 23.8,
                         "Wind_avg": 1.4,
-                        "Wind_max": 2.8
+                        "Wind_max": 2.8,
+                        "Precip": 0.0
                     },
                     "15": {
                         "Ta": 21.9,
                         "Wind_avg": 0.4,
-                        "Wind_max": 3.0
+                        "Wind_max": 3.0,
+                        "Precip": 0.0
                     },
                     "16": {
                         "Ta": 21.7,
                         "Wind_avg": 0.1,
-                        "Wind_max": 1.8
+                        "Wind_max": 1.8,
+                        "Precip": 0.0
                     },
                     "17": {
                         "Ta": 21.7,
                         "Wind_avg": 0.1,
-                        "Wind_max": 1.5
+                        "Wind_max": 1.5,
+                        "Precip": 0.0
                     },
                     "18": {
                         "Ta": 21.7,
                         "Wind_avg": 0.6,
-                        "Wind_max": 1.3
+                        "Wind_max": 1.3,
+                        "Precip": 0.0
                     },
                     "19": {
                         "Ta": 21.1,
                         "Wind_avg": 0.5,
-                        "Wind_max": 1.8
+                        "Wind_max": 1.8,
+                        "Precip": 0.0
                     },
                     "20": {
                         "Ta": 19.6,
                         "Wind_avg": 0.7,
-                        "Wind_max": 2.0
+                        "Wind_max": 2.0,
+                        "Precip": 0.0
                     },
                     "21": {
                         "Ta": 18.4,
                         "Wind_avg": 1.0,
-                        "Wind_max": 2.1
+                        "Wind_max": 2.1,
+                        "Precip": 0.0
                     },
                     "22": {
                         "Ta": 17.7,
                         "Wind_avg": 1.5,
-                        "Wind_max": 3.2
+                        "Wind_max": 3.2,
+                        "Precip": 0.0
                     },
                     "23": {
                         "Ta": 17.6,
                         "Wind_avg": 3.0,
-                        "Wind_max": 3.4
+                        "Wind_max": 3.4,
+                        "Precip": 0.1
                     }
                 },
                 "Precip_24h": 11.7
@@ -56227,7 +56293,8 @@
                     },
                     "10": {
                         "Wind_avg": 3.2,
-                        "Wind_max": 9.0
+                        "Wind_max": 9.0,
+                        "Ta": 11.72
                     },
                     "11": {
                         "Ta": 14.66,
@@ -57826,7 +57893,8 @@
                     "07": {
                         "Precip": 0.0,
                         "Wind_avg": 1.2,
-                        "Wind_max": 4.3
+                        "Wind_max": 4.3,
+                        "Ta": 16.27
                     },
                     "08": {
                         "Ta": 16.59,
@@ -57861,7 +57929,8 @@
                     "13": {
                         "Precip": 0.0,
                         "Wind_avg": 1.0,
-                        "Wind_max": 3.0
+                        "Wind_max": 3.0,
+                        "Ta": 23.77
                     },
                     "14": {
                         "Ta": 24.35,
@@ -84539,21 +84608,51 @@
                     "06": {},
                     "07": {},
                     "08": {},
-                    "09": {},
-                    "10": {},
-                    "11": {},
-                    "12": {},
-                    "13": {},
-                    "14": {},
-                    "15": {},
-                    "16": {},
-                    "17": {},
-                    "18": {},
-                    "19": {},
-                    "20": {},
-                    "21": {},
-                    "22": {},
-                    "23": {}
+                    "09": {
+                        "Precip": 0.0
+                    },
+                    "10": {
+                        "Precip": 0.2
+                    },
+                    "11": {
+                        "Precip": 0.1
+                    },
+                    "12": {
+                        "Precip": 0.1
+                    },
+                    "13": {
+                        "Precip": 0.0
+                    },
+                    "14": {
+                        "Precip": 0.0
+                    },
+                    "15": {
+                        "Precip": 0.0
+                    },
+                    "16": {
+                        "Precip": 0.1
+                    },
+                    "17": {
+                        "Precip": 0.1
+                    },
+                    "18": {
+                        "Precip": 0.1
+                    },
+                    "19": {
+                        "Precip": 0.0
+                    },
+                    "20": {
+                        "Precip": 0.0
+                    },
+                    "21": {
+                        "Precip": 0.0
+                    },
+                    "22": {
+                        "Precip": 0.0
+                    },
+                    "23": {
+                        "Precip": 0.0
+                    }
                 },
                 "Precip_24h": 5.4
             }
@@ -101021,122 +101120,146 @@
                     "00": {
                         "Ta": 14.4,
                         "Wind_avg": 0.5,
-                        "Wind_max": 1.9
+                        "Wind_max": 1.9,
+                        "Precip": 0.0
                     },
                     "01": {
                         "Ta": 12.8,
                         "Wind_avg": 0.5,
-                        "Wind_max": 1.5
+                        "Wind_max": 1.5,
+                        "Precip": 0.0
                     },
                     "02": {
                         "Ta": 12.2,
                         "Wind_avg": 0.1,
-                        "Wind_max": 1.4
+                        "Wind_max": 1.4,
+                        "Precip": 0.0
                     },
                     "03": {
                         "Ta": 12.4,
                         "Wind_avg": 0.6,
-                        "Wind_max": 1.6
+                        "Wind_max": 1.6,
+                        "Precip": 0.0
                     },
                     "04": {
                         "Ta": 12.3,
                         "Wind_avg": 0.9,
-                        "Wind_max": 1.6
+                        "Wind_max": 1.6,
+                        "Precip": 0.0
                     },
                     "05": {
                         "Ta": 12.8,
                         "Wind_avg": 0.6,
-                        "Wind_max": 2.0
+                        "Wind_max": 2.0,
+                        "Precip": 0.0
                     },
                     "06": {
                         "Ta": 13.9,
                         "Wind_avg": 1.0,
-                        "Wind_max": 1.7
+                        "Wind_max": 1.7,
+                        "Precip": 0.0
                     },
                     "07": {
                         "Ta": 14.9,
                         "Wind_avg": 0.8,
-                        "Wind_max": 3.2
+                        "Wind_max": 3.2,
+                        "Precip": 0.0
                     },
                     "08": {
                         "Ta": 15.8,
                         "Wind_avg": 1.8,
-                        "Wind_max": 2.2
+                        "Wind_max": 2.2,
+                        "Precip": 0.0
                     },
                     "09": {
                         "Ta": 16.7,
                         "Wind_avg": 2.1,
-                        "Wind_max": 3.1
+                        "Wind_max": 3.1,
+                        "Precip": 0.0
                     },
                     "10": {
                         "Ta": 20.1,
                         "Wind_avg": 2.5,
-                        "Wind_max": 3.6
+                        "Wind_max": 3.6,
+                        "Precip": 0.0
                     },
                     "11": {
                         "Ta": 20.4,
                         "Wind_avg": 1.7,
-                        "Wind_max": 4.4
+                        "Wind_max": 4.4,
+                        "Precip": 0.0
                     },
                     "12": {
                         "Ta": 23.0,
                         "Wind_avg": 1.6,
-                        "Wind_max": 4.7
+                        "Wind_max": 4.7,
+                        "Precip": 0.0
                     },
                     "13": {
                         "Ta": 22.8,
                         "Wind_avg": 1.7,
-                        "Wind_max": 5.5
+                        "Wind_max": 5.5,
+                        "Precip": 0.0
                     },
                     "14": {
                         "Ta": 23.9,
                         "Wind_avg": 1.3,
-                        "Wind_max": 3.8
+                        "Wind_max": 3.8,
+                        "Precip": 0.0
                     },
                     "15": {
                         "Ta": 23.3,
                         "Wind_avg": 2.3,
-                        "Wind_max": 3.5
+                        "Wind_max": 3.5,
+                        "Precip": 0.0
                     },
                     "16": {
                         "Ta": 22.4,
                         "Wind_avg": 4.2,
-                        "Wind_max": 4.6
+                        "Wind_max": 4.6,
+                        "Precip": 0.0
                     },
                     "17": {
                         "Ta": 18.6,
                         "Wind_avg": 5.4,
-                        "Wind_max": 11.4
+                        "Wind_max": 11.4,
+                        "Precip": 0.0
                     },
                     "18": {
                         "Ta": 15.4,
                         "Wind_avg": 3.3,
-                        "Wind_max": 11.6
+                        "Wind_max": 11.6,
+                        "Precip": 0.0
                     },
                     "19": {
                         "Ta": 14.7,
                         "Wind_avg": 2.6,
-                        "Wind_max": 5.8
+                        "Wind_max": 5.8,
+                        "Precip": 1.6
                     },
                     "20": {
                         "Ta": 14.6,
                         "Wind_avg": 2.8,
-                        "Wind_max": 5.3
+                        "Wind_max": 5.3,
+                        "Precip": 0.8
                     },
                     "21": {
                         "Ta": 14.7,
                         "Wind_avg": 2.4,
-                        "Wind_max": 4.9
+                        "Wind_max": 4.9,
+                        "Precip": 0.6
                     },
                     "22": {
                         "Ta": 14.4,
                         "Wind_avg": 2.4,
-                        "Wind_max": 4.2
+                        "Wind_max": 4.2,
+                        "Precip": 0.0
                     },
                     "23": {
                         "Ta": 14.1,
                         "Wind_avg": 2.0,
-                        "Wind_max": 4.2
+                        "Wind_max": 4.2,
+                        "Precip": 0.2
                     }
                 },
                 "Wind_max": 11.6,

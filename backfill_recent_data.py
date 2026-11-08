@@ -1,5 +1,6 @@
+import argparse
 import concurrent.futures
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, timedelta, timezone
 import json
 import math
 import os
@@ -12,9 +13,16 @@ from zoneinfo import ZoneInfo
 
 
 LOCAL_TZ = ZoneInfo("Europe/Warsaw")
-HOURS_INTERVAL = 1008
+HOURS_INTERVAL = 10000
+DEFAULT_WINDOW_DAYS = 42
 MAX_WORKERS = 10
 TEMPERATURE_URL_BASE = "https://hydro-back.imgw.pl/station/meteo/data?id="
+
+
+def meteorological_date(timestamp):
+    return (
+        timestamp.astimezone(timezone.utc) - timedelta(hours=6, microseconds=1)
+    ).date().isoformat()
 
 
 def fetch_station_history(station_id, target_dates):
@@ -34,6 +42,7 @@ def fetch_station_history(station_id, target_dates):
                 raise ValueError("API response is not a JSON object")
 
             readings = {}
+            daily_precip = {}
             for source_key, parameter_key in (
                 ("temperature", "Ta"),
                 ("precip", "Precip"),
@@ -58,21 +67,25 @@ def fetch_station_history(station_id, target_dates):
 
                     local_timestamp = timestamp.astimezone(LOCAL_TZ)
                     date_key = local_timestamp.date().isoformat()
-                    if date_key not in target_dates:
+                    daily_date = meteorological_date(timestamp)
+                    if date_key not in target_dates and daily_date not in target_dates:
                         continue
 
                     value = float(row["value"])
                     if not math.isfinite(value):
                         continue
 
-                    hour_key = f"{local_timestamp.hour:02d}"
-                    readings.setdefault(date_key, {}).setdefault(hour_key, {})[
-                        parameter_key
-                    ] = value
+                    if date_key in target_dates:
+                        hour_key = f"{local_timestamp.hour:02d}"
+                        readings.setdefault(date_key, {}).setdefault(hour_key, {})[
+                            parameter_key
+                        ] = value
+                    if parameter_key == "Precip" and daily_date in target_dates:
+                        daily_precip.setdefault(daily_date, []).append(value)
 
             wind = payload.get("wind")
+            wind_points = {}
             if isinstance(wind, dict):
-                wind_points = {}
                 for source_key in ("velocityObs", "velocityTel", "maxVelocity"):
                     points = []
                     for row in wind.get(source_key) or []:
@@ -88,7 +101,21 @@ def fetch_station_history(station_id, target_dates):
                             raise ValueError("API returned a timezone-naive timestamp")
                         local_timestamp = timestamp.astimezone(LOCAL_TZ)
                         date_key = local_timestamp.date().isoformat()
-                        if date_key not in target_dates:
+                        daily_date = meteorological_date(timestamp)
+                        is_meteorological_boundary = (
+                            timestamp.astimezone(timezone.utc).hour == 6
+                            and timestamp.astimezone(timezone.utc).minute == 0
+                            and timestamp.astimezone(timezone.utc).second == 0
+                            and timestamp.astimezone(timezone.utc).microsecond == 0
+                        )
+                        if (
+                            date_key not in target_dates
+                            and daily_date not in target_dates
+                            and not (
+                                is_meteorological_boundary
+                                and date_key in target_dates
+                            )
+                        ):
                             continue
 
                         value = float(row["value"])
@@ -128,17 +155,60 @@ def fetch_station_history(station_id, target_dates):
                     hourly_wind.setdefault(key, {})["Wind_max"] = max(values)
 
                 for (date_key, hour), parameters in hourly_wind.items():
+                    if date_key not in target_dates:
+                        continue
                     readings.setdefault(date_key, {}).setdefault(
                         f"{hour:02d}", {}
                     ).update(parameters)
 
-            return station_id, readings, None
+            daily_readings = {}
+            wind_by_date = {}
+            for source_key, points in wind_points.items():
+                for timestamp, value in points:
+                    utc_timestamp = timestamp.astimezone(timezone.utc)
+                    daily_date = meteorological_date(timestamp)
+                    if daily_date in target_dates:
+                        wind_by_date.setdefault(daily_date, {}).setdefault(
+                            source_key, []
+                        ).append(value)
+                    if (
+                        utc_timestamp.hour == 6
+                        and utc_timestamp.minute == 0
+                        and utc_timestamp.second == 0
+                        and utc_timestamp.microsecond == 0
+                    ):
+                        boundary_date = utc_timestamp.date().isoformat()
+                        if boundary_date in target_dates:
+                            wind_by_date.setdefault(boundary_date, {}).setdefault(
+                                source_key, []
+                            ).append(value)
+
+            for date_key in target_dates:
+                daily = {}
+                precip_values = daily_precip.get(date_key, [])
+                if precip_values:
+                    daily["Precip_24h"] = sum(precip_values)
+                    daily["Number_of_precip_measurements"] = len(precip_values)
+
+                wind_values = wind_by_date.get(date_key, {})
+                speeds = wind_values.get("velocityTel") or wind_values.get(
+                    "velocityObs"
+                )
+                gusts = wind_values.get("maxVelocity", [])
+                if speeds:
+                    daily["Wind_avg"] = round(sum(speeds) / len(speeds), 1)
+                if gusts:
+                    daily["Wind_max"] = max(gusts)
+                if daily:
+                    daily_readings[date_key] = daily
+
+            return station_id, readings, daily_readings, None
         except (OSError, URLError, TimeoutError, ValueError, json.JSONDecodeError) as error:
             last_error = error
             if attempt < 2:
                 time.sleep(1.5 * (attempt + 1))
 
-    return station_id, {}, f"{type(last_error).__name__}: {last_error}"
+    return station_id, {}, {}, f"{type(last_error).__name__}: {last_error}"
 
 
 def add_missing_readings(document, station_readings, counts):
@@ -164,7 +234,57 @@ def add_missing_readings(document, station_readings, counts):
                     counts[hour_key][parameter_key] += 1
 
 
+def add_missing_daily_readings(document, station_readings, counts):
+    for feature in document.get("features", []):
+        properties = feature.get("properties", {})
+        if properties.get("Status") != "ACTIVE":
+            continue
+
+        station_values = station_readings.get(str(properties.get("Station_id")), {})
+        for parameter_key, value in station_values.items():
+            if properties.get(parameter_key) is None or properties.get(parameter_key) == "":
+                properties[parameter_key] = value
+                counts[parameter_key] = counts.get(parameter_key, 0) + 1
+
+
+def initialize_hourly(document):
+    changed = False
+    for feature in document.get("features", []):
+        properties = feature.get("properties", {})
+        if properties.get("Status") != "ACTIVE":
+            continue
+
+        hourly = properties.get("Hourly")
+        if not isinstance(hourly, dict):
+            hourly = {}
+            properties["Hourly"] = hourly
+            changed = True
+
+        for hour in range(24):
+            hour_key = f"{hour:02d}"
+            if not isinstance(hourly.get(hour_key), dict):
+                hourly[hour_key] = {}
+                changed = True
+
+    return changed
+
+
 def main():
+    parser = argparse.ArgumentParser(
+        description="Backfill missing hourly data from IMGW station history."
+    )
+    parser.add_argument(
+        "--from-date",
+        type=date.fromisoformat,
+        help="First date to backfill (YYYY-MM-DD); defaults to the recent window.",
+    )
+    parser.add_argument(
+        "--to-date",
+        type=date.fromisoformat,
+        help="Last date to backfill (YYYY-MM-DD); defaults to today.",
+    )
+    args = parser.parse_args()
+
     root = Path(__file__).resolve().parent
     data_dir = root / "imgw_data"
     dates_path = data_dir / "dates.json"
@@ -174,7 +294,13 @@ def main():
         raise ValueError(f"{dates_path} must contain a JSON array")
 
     today = datetime.now(LOCAL_TZ).date()
-    cutoff = today - timedelta(days=HOURS_INTERVAL // 24 - 1)
+    start_date = args.from_date or today - timedelta(days=DEFAULT_WINDOW_DAYS - 1)
+    end_date = args.to_date or today
+    if start_date > end_date:
+        raise ValueError("--from-date must not be later than --to-date")
+    if end_date > today:
+        raise ValueError("--to-date must not be in the future")
+
     target_dates = set()
     documents = {}
     missing_files = []
@@ -186,7 +312,7 @@ def main():
             file_date = date.fromisoformat(date_value)
         except ValueError:
             continue
-        if not cutoff <= file_date <= today:
+        if not start_date <= file_date <= end_date:
             continue
 
         file_path = data_dir / f"{date_value}.geojson"
@@ -198,7 +324,15 @@ def main():
         target_dates.add(date_value)
 
     if not target_dates:
-        raise RuntimeError("No dated GeoJSON files found in the six-week window")
+        raise RuntimeError(
+            f"No dated GeoJSON files found between {start_date} and {end_date}"
+        )
+
+    structure_changed_dates = {
+        date_key
+        for date_key, document in documents.items()
+        if initialize_hourly(document)
+    }
 
     station_ids = sorted(
         {
@@ -213,6 +347,7 @@ def main():
         raise RuntimeError("No active station IDs found in recent GeoJSON files")
 
     readings_by_station = {}
+    daily_readings_by_station = {}
     failures = []
     with concurrent.futures.ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
         futures = {
@@ -220,11 +355,12 @@ def main():
             for station_id in station_ids
         }
         for future in concurrent.futures.as_completed(futures):
-            station_id, readings, error = future.result()
+            station_id, readings, daily_readings, error = future.result()
             if error:
                 failures.append((station_id, error))
             else:
                 readings_by_station[station_id] = readings
+                daily_readings_by_station[station_id] = daily_readings
 
     if not readings_by_station:
         raise RuntimeError(
@@ -237,6 +373,8 @@ def main():
     if today_key in documents and latest_path.is_file():
         with latest_path.open(encoding="utf-8") as latest_file:
             latest_document = json.load(latest_file)
+        if initialize_hourly(latest_document):
+            structure_changed_dates.add(today_key)
 
     additions_by_date = {date_key: {} for date_key in target_dates}
     documents_to_write = dict(documents)
@@ -251,6 +389,16 @@ def main():
             date_readings,
             additions_by_date[date_key],
         )
+        date_daily_readings = {
+            station_id: readings[date_key]
+            for station_id, readings in daily_readings_by_station.items()
+            if date_key in readings
+        }
+        add_missing_daily_readings(
+            document,
+            date_daily_readings,
+            additions_by_date[date_key],
+        )
 
     if latest_document is not None:
         add_missing_readings(
@@ -262,11 +410,21 @@ def main():
             },
             additions_by_date[today_key],
         )
+        add_missing_daily_readings(
+            latest_document,
+            {
+                station_id: readings[today_key]
+                for station_id, readings in daily_readings_by_station.items()
+                if today_key in readings
+            },
+            additions_by_date[today_key],
+        )
 
     changed_dates = [
         date_key
         for date_key, counts in additions_by_date.items()
-        if any(counts_by_parameter for counts_by_parameter in counts.values())
+        if date_key in structure_changed_dates
+        or any(counts_by_parameter for counts_by_parameter in counts.values())
     ]
     if not changed_dates:
         print("Recent GeoJSON files already contain all available IMGW readings.")
