@@ -28,19 +28,19 @@
 
         body.dark-theme {
             --page-bg: #0f172a;
-            --panel-bg: rgba(15, 23, 42, 0.88);
-            --panel-bg-strong: rgba(15, 23, 42, 0.96);
+            --panel-bg: rgba(45, 45, 45, 0.96);
+            --panel-bg-strong: rgba(45, 45, 45, 0.96);
             --panel-border: rgba(148, 163, 184, 0.2);
             --text-main: #e2e8f0;
             --text-soft: #cbd5e1;
             --text-muted: #94a3b8;
-            --timeline-bg: rgba(15, 23, 42, 0.9);
+            --timeline-bg: var(--panel-bg);
             --timeline-line: rgba(180, 180, 186, 0.35);
-            --input-bg: #111827;
+            --input-bg: var(--panel-bg);
             --input-border: #6a717d;
             --shadow: rgba(2, 6, 23, 0.45);
             --header-border: rgba(180, 180, 186, 0.2);
-            --button-bg: rgba(30, 41, 59, 0.9);
+            --button-bg: var(--panel-bg);
             --button-text: #e2e8f0;
             --legend-subtitle: #cbd5e1;
             --legend-value: #dbeafe;
@@ -525,13 +525,15 @@
         }
         .rankings-content {
             height: calc(100% - 42px);
-            overflow: hidden;
+            overflow-x: hidden;
+            overflow-y: auto;
             padding-right: 2px;
             display: flex;
             flex-direction: column;
+            overscroll-behavior: contain;
         }
         .ranking-section {
-            flex: 1 1 0;
+            flex: 0 0 auto;
             min-height: 0;
             margin: 0;
             padding: 5px 0 0 0;
@@ -546,6 +548,31 @@
             color: var(--text-main);
             font-size: 11px;
             line-height: 1.2;
+            font-weight: 700;
+        }
+        .ranking-sort-controls {
+            display: flex;
+            gap: 5px;
+            margin: 0 0 3px;
+        }
+        .ranking-sort-button {
+            flex: 1;
+            min-width: 0;
+            padding: 3px 4px;
+            border: 1px solid var(--input-border);
+            border-radius: 4px;
+            background: var(--input-bg);
+            color: var(--text-main);
+            font-size: 10px;
+            line-height: 1.2;
+            white-space: nowrap;
+            cursor: pointer;
+        }
+        body.dark-theme .ranking-sort-button {
+            background: var(--panel-bg);
+        }
+        .ranking-sort-button[aria-pressed="true"] {
+            border-color: var(--slider-accent-strong);
             font-weight: 700;
         }
         .ranking-table-wrap {
@@ -676,6 +703,23 @@
             margin-left: 0 !important;
             top: auto !important;
             bottom: 0 !important;
+        }
+        #map .leaflet-control-attribution {
+            position: fixed;
+            top: 0;
+            bottom: auto;
+            left: 50%;
+            right: auto;
+            z-index: 1001;
+            max-width: calc(100vw - 24px);
+            margin: 0;
+            padding: 1px 3px;
+            transform: translateX(-50%);
+            font-size: 8px;
+            line-height: 1;
+            text-align: center;
+            white-space: nowrap;
+            opacity: 0.68;
         }
         .leaflet-left .leaflet-control,
         .custom-basemap-control,

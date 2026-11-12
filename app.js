@@ -31,7 +31,9 @@ function loadMapPreferences() {
     const defaults = {
         baseLayer: 'topo',
         opacity: 1,
-        parameters: ['Temperatura aktualna (Ta)']
+        parameters: ['Temperatura aktualna (Ta)'],
+        temperatureRankingDirection: 'highest',
+        temperatureRankingSort: 'value'
     };
 
     try {
@@ -47,16 +49,34 @@ function loadMapPreferences() {
                 : defaults.opacity,
             parameters: Array.isArray(savedPreferences.parameters)
                 ? savedPreferences.parameters
-                : defaults.parameters
+                : defaults.parameters,
+            temperatureRankingDirection: ['highest', 'lowest'].includes(savedPreferences.temperatureRankingDirection)
+                ? savedPreferences.temperatureRankingDirection
+                : 'highest',
+            temperatureRankingSort: savedPreferences.temperatureRankingSort === 'alphabetical'
+                ? 'alphabetical-asc'
+                : ['value', 'alphabetical-asc', 'alphabetical-desc'].includes(savedPreferences.temperatureRankingSort)
+                    ? savedPreferences.temperatureRankingSort
+                    : 'value'
         };
     } catch (error) {
         return defaults;
     }
 }
 
-function saveMapPreferences(baseLayer, opacity, parameters) {
+const initialMapPreferences = loadMapPreferences();
+let temperatureRankingDirection = initialMapPreferences.temperatureRankingDirection;
+let temperatureRankingSort = initialMapPreferences.temperatureRankingSort;
+
+function saveMapPreferences(baseLayer, opacity, parameters, rankingDirection, rankingSort) {
     try {
-        localStorage.setItem(mapPreferencesStorageKey, JSON.stringify({ baseLayer, opacity, parameters }));
+        localStorage.setItem(mapPreferencesStorageKey, JSON.stringify({
+            baseLayer,
+            opacity,
+            parameters,
+            temperatureRankingDirection: rankingDirection,
+            temperatureRankingSort: rankingSort
+        }));
     } catch (error) {
         console.warn('Nie udało się zapisać ustawień mapy:', error);
     }
@@ -523,12 +543,12 @@ function buildRankingsControl() {
             </div>
             <div class="rankings-content">
                 <section class="ranking-section">
-                    <h3 data-ranking-title="highest-temperature">Najwyższe temperatury (Ta):</h3>
-                    <div class="ranking-table-wrap"><table><tbody data-ranking="highest-temperature"></tbody></table></div>
-                </section>
-                <section class="ranking-section">
-                    <h3 data-ranking-title="lowest-temperature">Najniższe temperatury (Ta):</h3>
-                    <div class="ranking-table-wrap"><table><tbody data-ranking="lowest-temperature"></tbody></table></div>
+                    <h3 data-ranking-title="temperature">Temperatury (Ta):</h3>
+                    <div class="ranking-sort-controls">
+                        <button type="button" class="ranking-sort-button" data-ranking-sort="value"></button>
+                        <button type="button" class="ranking-sort-button" data-ranking-sort="alphabetical" aria-pressed="false">Alfabetycznie</button>
+                    </div>
+                    <div class="ranking-table-wrap"><table><tbody data-ranking="temperature"></tbody></table></div>
                 </section>
                 <section class="ranking-section">
                     <h3>Najwyższe dobowe sumy opadów:</h3>
@@ -549,6 +569,32 @@ function buildRankingsControl() {
             toggle.setAttribute('title', collapsed ? 'Pokaż rankingi' : 'Zwiń rankingi');
         });
 
+        const directionButton = div.querySelector('[data-ranking-sort="value"]');
+        const alphabeticalButton = div.querySelector('[data-ranking-sort="alphabetical"]');
+        const saveRankingPreferences = () => {
+            const preferences = loadMapPreferences();
+            saveMapPreferences(
+                preferences.baseLayer,
+                preferences.opacity,
+                preferences.parameters,
+                temperatureRankingDirection,
+                temperatureRankingSort
+            );
+        };
+        directionButton.addEventListener('click', () => {
+            temperatureRankingDirection = temperatureRankingDirection === 'highest' ? 'lowest' : 'highest';
+            temperatureRankingSort = 'value';
+            saveRankingPreferences();
+            updateRankingsPanel(currentHourStr);
+        });
+        alphabeticalButton.addEventListener('click', () => {
+            temperatureRankingSort = temperatureRankingSort === 'alphabetical-asc'
+                ? 'alphabetical-desc'
+                : 'alphabetical-asc';
+            saveRankingPreferences();
+            updateRankingsPanel(currentHourStr);
+        });
+
         L.DomEvent.disableClickPropagation(div);
         L.DomEvent.disableScrollPropagation(div);
         return div;
@@ -566,14 +612,81 @@ function updateRankingsPanel(hourStr) {
     if (!container) return;
 
     const selectedTemp = getSelectedTempParam();
-    const highestTitle = container.querySelector('[data-ranking-title="highest-temperature"]');
-    const lowestTitle = container.querySelector('[data-ranking-title="lowest-temperature"]');
-    if (highestTitle) {
-        highestTitle.textContent = `Najwyższe temperatury (${selectedTemp.shortName}):`;
+    const selectedTempLayer = tempLayerMapping.find(parameter => map.hasLayer(parameter.group));
+    const selectedMeasurements = tempLayerMapping
+        .filter(parameter => map.hasLayer(parameter.group))
+        .map(parameter => ({
+            layer: parameter.group,
+            title: `Temperatura (${parameter.shortName})`,
+            unit: '°C',
+            getValue: props => getFeatureTempValue(props, parameter.key, hStr)
+        }));
+    selectedMeasurements.push(
+        {
+            layer: etykietyOpady24h,
+            title: 'Suma opadów (Precip_24h)',
+            unit: 'mm',
+            getValue: props => props.Precip_24h == null ? null : Number(props.Precip_24h)
+        },
+        {
+            layer: etykietyOpady10min,
+            title: 'Opad wybranej godziny (Precip_hour)',
+            unit: 'mm',
+            getValue: props => {
+                const value = props.Hourly?.[hStr]?.Precip ?? props.Precip_10min;
+                return value == null ? null : Number(value);
+            }
+        },
+        {
+            layer: etykietyWindAvg,
+            title: 'Średnia prędkość wiatru (Wind_avg)',
+            unit: 'km/h',
+            getValue: props => {
+                const value = props.Hourly?.[hStr]?.Wind_avg;
+                return value == null ? null : Number(convertMetersPerSecondToKilometersPerHour(value));
+            }
+        },
+        {
+            layer: etykietyWindMax,
+            title: 'Maksymalny poryw wiatru (Wind_max)',
+            unit: 'km/h',
+            getValue: props => props.Wind_max == null
+                ? null
+                : Number(convertMetersPerSecondToKilometersPerHour(props.Wind_max))
+        }
+    );
+    const singleMeasurement = selectedMeasurements.filter(parameter => map.hasLayer(parameter.layer));
+    const primaryMeasurement = singleMeasurement.length === 1
+        ? singleMeasurement[0]
+        : selectedTempLayer
+            ? {
+                title: `Temperatura (${selectedTemp.shortName})`,
+                unit: '°C',
+                getValue: props => getFeatureTempValue(props, selectedTemp.key, hStr)
+            }
+            : null;
+    const temperatureTitle = container.querySelector('[data-ranking-title="temperature"]');
+    if (temperatureTitle) {
+        temperatureTitle.textContent = primaryMeasurement?.title || `Temperatura (${selectedTemp.shortName})`;
     }
-    if (lowestTitle) {
-        lowestTitle.textContent = `Najniższe temperatury (${selectedTemp.shortName}):`;
-    }
+    const directionButton = container.querySelector('[data-ranking-sort="value"]');
+    directionButton.textContent = temperatureRankingDirection === 'highest' ? 'Najwyższe wartości' : 'Najniższe wartości';
+    directionButton.setAttribute('aria-pressed', String(temperatureRankingSort === 'value'));
+    directionButton.setAttribute('aria-label', `Sortuj według ${temperatureRankingDirection === 'highest' ? 'najwyższych' : 'najniższych'} wartości`);
+    const alphabeticalButton = container.querySelector('[data-ranking-sort="alphabetical"]');
+    const alphabeticalDescending = temperatureRankingSort === 'alphabetical-desc';
+    const alphabeticalSelected = temperatureRankingSort !== 'value';
+    alphabeticalButton.textContent = alphabeticalDescending ? 'Alfabetycznie Z–A' : 'Alfabetycznie A–Z';
+    alphabeticalButton.setAttribute('aria-pressed', String(alphabeticalSelected));
+    alphabeticalButton.setAttribute('aria-label', `Sortuj alfabetycznie ${alphabeticalDescending ? 'od Z do A' : 'od A do Z'}`);
+
+    const temperatureSection = container.querySelector('[data-ranking="temperature"]').closest('.ranking-section');
+    const precipitationSection = container.querySelector('[data-ranking="precipitation"]').closest('.ranking-section');
+    const windSection = container.querySelector('[data-ranking="wind"]').closest('.ranking-section');
+    temperatureSection.hidden = !primaryMeasurement;
+    precipitationSection.hidden = singleMeasurement.length === 1 || !map.hasLayer(etykietyOpady24h);
+    windSection.hidden = singleMeasurement.length === 1
+        || (!map.hasLayer(etykietyWindAvg) && !map.hasLayer(etykietyWindMax));
 
     const entries = [];
     if (globalGeoJsonData && Array.isArray(globalGeoJsonData.features)) {
@@ -584,22 +697,39 @@ function updateRankingsPanel(hourStr) {
             const precipitation = props.Precip_24h !== undefined && props.Precip_24h !== null ? Number(props.Precip_24h) : null;
             const wind = props.Wind_max !== undefined && props.Wind_max !== null ? Number(convertMetersPerSecondToKilometersPerHour(props.Wind_max)) : null;
             const station = props.Station_name || props.Station_id || 'Brak nazwy';
-            entries.push({ station, temperature, precipitation, wind });
+            entries.push({
+                station,
+                temperature,
+                precipitation,
+                wind,
+                selectedMeasurement: singleMeasurement.length === 1
+                    ? singleMeasurement[0].getValue(props)
+                    : null
+            });
         });
     }
 
     const sortValues = (key, direction) => {
-        const sortedEntries = entries
+        return entries
             .filter(entry => entry[key] !== null && Number.isFinite(entry[key]))
             .sort((first, second) => direction * (second[key] - first[key]));
-        const visibleEntries = sortedEntries.slice(0, 10);
-        const boundaryValue = sortedEntries[0]?.[key];
-        const tiedBoundaryEntries = sortedEntries.slice(10).filter(entry => entry[key] === boundaryValue);
-        return visibleEntries.concat(tiedBoundaryEntries);
     };
+    const primaryRankingKey = singleMeasurement.length === 1 ? 'selectedMeasurement' : 'temperature';
+    const primaryRankingValues = sortValues(primaryRankingKey, temperatureRankingDirection === 'highest' ? 1 : -1);
+    const temperatureBoundaryValue = primaryRankingValues[0]?.[primaryRankingKey];
+    if (temperatureRankingSort !== 'value') {
+        const alphabeticalDirection = temperatureRankingSort === 'alphabetical-desc' ? -1 : 1;
+        primaryRankingValues.sort((first, second) => alphabeticalDirection * first.station.localeCompare(second.station, 'pl', { sensitivity: 'base' }));
+    }
     const rankings = {
-        'highest-temperature': { values: sortValues('temperature', 1), unit: '°C', key: 'temperature', highlight: true },
-        'lowest-temperature': { values: sortValues('temperature', -1).sort((first, second) => second.temperature - first.temperature), unit: '°C', key: 'temperature', highlightLowest: true },
+        temperature: {
+            values: primaryRankingValues,
+            unit: primaryMeasurement?.unit || '°C',
+            key: primaryRankingKey,
+            highlight: temperatureRankingDirection === 'highest',
+            highlightLowest: temperatureRankingDirection === 'lowest',
+            boundaryValue: temperatureBoundaryValue
+        },
         precipitation: { values: sortValues('precipitation', 1), unit: 'mm', key: 'precipitation', highlight: true },
         wind: { values: sortValues('wind', 1), unit: 'km/h', key: 'wind', highlight: true }
     };
@@ -607,11 +737,12 @@ function updateRankingsPanel(hourStr) {
     Object.entries(rankings).forEach(([name, ranking]) => {
         const body = container.querySelector(`[data-ranking="${name}"]`);
         if (!body) return;
-        const boundaryValue = ranking.highlight
-            ? ranking.values[0]?.[ranking.key]
-            : ranking.highlightLowest
-                ? ranking.values[ranking.values.length - 1]?.[ranking.key]
+        let boundaryValue = ranking.boundaryValue;
+        if (boundaryValue === undefined) {
+            boundaryValue = ranking.highlight || ranking.highlightLowest
+                ? ranking.values[0]?.[ranking.key]
                 : null;
+        }
         body.innerHTML = ranking.values.length
             ? ranking.values.map(entry => {
                 const isBoundaryValue = boundaryValue !== null && entry[ranking.key] === boundaryValue;
@@ -870,7 +1001,13 @@ function buildUnifiedLayerControl() {
             const selectedBaseLayer = div.querySelector('input[name="customBaseLayer"]:checked')?.value || 'topo';
             const selectedParameters = [...parameterList.querySelectorAll('input[type="checkbox"]:checked')]
                 .map(input => input.dataset.overlayLabel);
-            saveMapPreferences(selectedBaseLayer, parseFloat(slider?.value || '1'), selectedParameters);
+            saveMapPreferences(
+                selectedBaseLayer,
+                parseFloat(slider?.value || '1'),
+                selectedParameters,
+                temperatureRankingDirection,
+                temperatureRankingSort
+            );
         };
 
         const applyBaseLayer = selectedVal => {
