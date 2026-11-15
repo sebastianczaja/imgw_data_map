@@ -27,6 +27,7 @@ day = now_local.day
 
 url = "https://danepubliczne.imgw.pl/api/data/meteo"
 temperature_url_base = "https://hydro-back.imgw.pl/station/meteo/data?id="
+station_metadata_url = "https://hydro-back.imgw.pl/list/meteo"
 przymrozki_url_base =  "https://agrometeo.imgw.pl/przymrozki/api?d="
 
 def addZero(dataNumber):
@@ -286,14 +287,14 @@ def extract_temperature_data(temperature_data, przymrozki_data, station_name, lo
         all_temps_amount=len(all_temps) if all_temps and isinstance(all_temps, list) else 0
     )
 
-async def fetch_json(session, url):
+async def fetch_json(session, url, headers=None):
     last_error = None
     for attempt in range(1, MAX_FETCH_ATTEMPTS + 1):
         try:
             async with request_semaphore:
                 async with session.get(
                     url,
-                    headers={"User-Agent": "Mozilla/5.0"},
+                    headers={"User-Agent": "Mozilla/5.0", **(headers or {})},
                     timeout=aiohttp.ClientTimeout(total=REQUEST_TIMEOUT_SECONDS),
                 ) as response:
                     if response.status == 200:
@@ -312,6 +313,37 @@ async def fetch_json(session, url):
         f"Nie udało się pobrać danych IMGW po {attempt} próbach: {url} "
         f"({type(last_error).__name__}: {last_error})"
     ) from last_error
+
+def apply_station_elevations(stations, metadata):
+    if not isinstance(metadata, list) or not metadata:
+        raise ValueError("IMGW zwróciło nieprawidłową lub pustą listę metadanych stacji.")
+
+    elevations = {}
+    for record in metadata:
+        if not isinstance(record, dict) or not record.get("code") or "altitude" not in record:
+            raise ValueError("IMGW zwróciło nieprawidłowe metadane stacji.")
+        station_id = str(record["code"])
+        altitude = record["altitude"]
+        if altitude is None:
+            continue
+        if isinstance(altitude, bool):
+            raise ValueError(f"Nieprawidłowa wysokość stacji {station_id}: {altitude!r}")
+        try:
+            elevation = float(altitude)
+        except (TypeError, ValueError, OverflowError) as error:
+            raise ValueError(f"Nieprawidłowa wysokość stacji {station_id}: {altitude!r}") from error
+        if not math.isfinite(elevation):
+            raise ValueError(f"Nieprawidłowa wysokość stacji {station_id}: {altitude!r}")
+        if station_id in elevations and elevations[station_id] != elevation:
+            raise ValueError(f"Sprzeczne wysokości stacji {station_id} w danych IMGW.")
+        elevations[station_id] = elevation
+
+    matched = 0
+    for station_id, station in stations.items():
+        if station_id in elevations:
+            station["Elevation"] = elevations[station_id]
+            matched += 1
+    return matched
 
 async def gather_station_features(tasks, description):
     async def capture_result(task):
@@ -589,6 +621,19 @@ async def main():
     previous_day_readings = {}
 
     async with aiohttp.ClientSession() as session:
+        station_metadata = await fetch_json(
+            session,
+            station_metadata_url,
+            headers={"Origin": "https://hydro.imgw.pl", "Referer": "https://hydro.imgw.pl/"},
+        )
+        matched_elevations = apply_station_elevations(stations_map, station_metadata)
+        unavailable_elevations = sum(
+            info["Elevation"] is None for info in stations_map.values() if info["Status"] == "ACTIVE"
+        )
+        print(
+            f"Pobrano wysokości IMGW dla {matched_elevations} stacji; "
+            f"brak wysokości dla {unavailable_elevations} aktywnych stacji."
+        )
         imgw_data = await fetch_json(session, url=url)
         if not imgw_data:
             raise RuntimeError("IMGW zwróciło pustą listę danych stacji.")
