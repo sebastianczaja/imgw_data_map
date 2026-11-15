@@ -55,7 +55,7 @@ function loadMapPreferences() {
                 : 'highest',
             temperatureRankingSort: savedPreferences.temperatureRankingSort === 'alphabetical'
                 ? 'alphabetical-asc'
-                : ['value', 'alphabetical-asc', 'alphabetical-desc'].includes(savedPreferences.temperatureRankingSort)
+                : ['value', 'alphabetical-asc', 'alphabetical-desc', 'elevation-asc', 'elevation-desc'].includes(savedPreferences.temperatureRankingSort)
                     ? savedPreferences.temperatureRankingSort
                     : 'value'
         };
@@ -67,6 +67,10 @@ function loadMapPreferences() {
 const initialMapPreferences = loadMapPreferences();
 let temperatureRankingDirection = initialMapPreferences.temperatureRankingDirection;
 let temperatureRankingSort = initialMapPreferences.temperatureRankingSort;
+const secondaryRankingSorts = {
+    precipitation: { sort: 'value', direction: 'highest' },
+    wind: { sort: 'value', direction: 'highest' }
+};
 
 function saveMapPreferences(baseLayer, opacity, parameters, rankingDirection, rankingSort) {
     try {
@@ -536,6 +540,12 @@ function buildRankingsControl() {
     rankingsControl = L.control({ position: 'topright' });
     rankingsControl.onAdd = function () {
         const div = L.DomUtil.create('div', 'leaflet-control compact-panel rankings-control');
+        const rankingTable = name => `
+            <div class="ranking-table-wrap"><table data-ranking-table="${name}"><thead><tr>
+                <th scope="col" data-sort-column="value"><button type="button" data-ranking-column="value">Wartość</button></th>
+                <th scope="col" data-sort-column="alphabetical"><button type="button" data-ranking-column="alphabetical">Nazwa stacji</button></th>
+                <th scope="col" data-sort-column="elevation"><button type="button" data-ranking-column="elevation"><span class="ranking-elevation-title">Wys.</span><br><span>[m n.p.m.]</span></button></th>
+            </tr></thead><tbody data-ranking="${name}"></tbody></table></div>`;
         div.innerHTML = `
             <div class="panel-global-header rankings-header">
                 <div class="panel-main-title">Dane</div>
@@ -543,20 +553,15 @@ function buildRankingsControl() {
             </div>
             <div class="rankings-content">
                 <section class="ranking-section">
-                    <h3 data-ranking-title="temperature">Temperatury (Ta):</h3>
-                    <div class="ranking-sort-controls">
-                        <button type="button" class="ranking-sort-button" data-ranking-sort="value"></button>
-                        <button type="button" class="ranking-sort-button" data-ranking-sort="alphabetical" aria-pressed="false">Alfabetycznie</button>
-                    </div>
-                    <div class="ranking-table-wrap"><table><tbody data-ranking="temperature"></tbody></table></div>
+                    ${rankingTable('temperature')}
                 </section>
                 <section class="ranking-section">
                     <h3>Najwyższe dobowe sumy opadów:</h3>
-                    <div class="ranking-table-wrap"><table><tbody data-ranking="precipitation"></tbody></table></div>
+                    ${rankingTable('precipitation')}
                 </section>
                 <section class="ranking-section">
                     <h3>Najwyższe dobowe prędkości wiatru:</h3>
-                    <div class="ranking-table-wrap"><table><tbody data-ranking="wind"></tbody></table></div>
+                    ${rankingTable('wind')}
                 </section>
             </div>
         `;
@@ -569,8 +574,6 @@ function buildRankingsControl() {
             toggle.setAttribute('title', collapsed ? 'Pokaż rankingi' : 'Zwiń rankingi');
         });
 
-        const directionButton = div.querySelector('[data-ranking-sort="value"]');
-        const alphabeticalButton = div.querySelector('[data-ranking-sort="alphabetical"]');
         const saveRankingPreferences = () => {
             const preferences = loadMapPreferences();
             saveMapPreferences(
@@ -581,18 +584,28 @@ function buildRankingsControl() {
                 temperatureRankingSort
             );
         };
-        directionButton.addEventListener('click', () => {
-            temperatureRankingDirection = temperatureRankingDirection === 'highest' ? 'lowest' : 'highest';
-            temperatureRankingSort = 'value';
-            saveRankingPreferences();
-            updateRankingsPanel(currentHourStr);
-        });
-        alphabeticalButton.addEventListener('click', () => {
-            temperatureRankingSort = temperatureRankingSort === 'alphabetical-asc'
-                ? 'alphabetical-desc'
-                : 'alphabetical-asc';
-            saveRankingPreferences();
-            updateRankingsPanel(currentHourStr);
+        div.querySelectorAll('[data-ranking-table]').forEach(table => {
+            const name = table.dataset.rankingTable;
+            table.querySelectorAll('[data-ranking-column]').forEach(button => {
+                button.addEventListener('click', () => {
+                    const column = button.dataset.rankingColumn;
+                    const state = name === 'temperature'
+                        ? { sort: temperatureRankingSort, direction: temperatureRankingDirection }
+                        : secondaryRankingSorts[name];
+                    if (column === 'value') {
+                        state.direction = state.sort === 'value' && state.direction === 'highest' ? 'lowest' : 'highest';
+                        state.sort = 'value';
+                    } else {
+                        state.sort = state.sort === `${column}-asc` ? `${column}-desc` : `${column}-asc`;
+                    }
+                    if (name === 'temperature') {
+                        temperatureRankingSort = state.sort;
+                        temperatureRankingDirection = state.direction;
+                        saveRankingPreferences();
+                    }
+                    updateRankingsPanel(currentHourStr);
+                });
+            });
         });
 
         L.DomEvent.disableClickPropagation(div);
@@ -617,20 +630,20 @@ function updateRankingsPanel(hourStr) {
         .filter(parameter => map.hasLayer(parameter.group))
         .map(parameter => ({
             layer: parameter.group,
-            title: `Temperatura (${parameter.shortName})`,
+            shortName: parameter.shortName,
             unit: '°C',
             getValue: props => getFeatureTempValue(props, parameter.key, hStr)
         }));
     selectedMeasurements.push(
         {
             layer: etykietyOpady24h,
-            title: 'Suma opadów (Precip_24h)',
+            shortName: 'Precip_24h',
             unit: 'mm',
             getValue: props => props.Precip_24h == null ? null : Number(props.Precip_24h)
         },
         {
             layer: etykietyOpady10min,
-            title: 'Opad wybranej godziny (Precip_hour)',
+            shortName: 'Precip_hour',
             unit: 'mm',
             getValue: props => {
                 const value = props.Hourly?.[hStr]?.Precip ?? props.Precip_10min;
@@ -639,7 +652,7 @@ function updateRankingsPanel(hourStr) {
         },
         {
             layer: etykietyWindAvg,
-            title: 'Średnia prędkość wiatru (Wind_avg)',
+            shortName: 'Wind_avg',
             unit: 'km/h',
             getValue: props => {
                 const value = props.Hourly?.[hStr]?.Wind_avg;
@@ -648,7 +661,7 @@ function updateRankingsPanel(hourStr) {
         },
         {
             layer: etykietyWindMax,
-            title: 'Maksymalny poryw wiatru (Wind_max)',
+            shortName: 'Wind_max',
             unit: 'km/h',
             getValue: props => props.Wind_max == null
                 ? null
@@ -660,26 +673,11 @@ function updateRankingsPanel(hourStr) {
         ? singleMeasurement[0]
         : selectedTempLayer
             ? {
-                title: `Temperatura (${selectedTemp.shortName})`,
+                shortName: selectedTemp.shortName,
                 unit: '°C',
                 getValue: props => getFeatureTempValue(props, selectedTemp.key, hStr)
             }
             : null;
-    const temperatureTitle = container.querySelector('[data-ranking-title="temperature"]');
-    if (temperatureTitle) {
-        temperatureTitle.textContent = primaryMeasurement?.title || `Temperatura (${selectedTemp.shortName})`;
-    }
-    const directionButton = container.querySelector('[data-ranking-sort="value"]');
-    directionButton.textContent = temperatureRankingDirection === 'highest' ? 'Najwyższe wartości' : 'Najniższe wartości';
-    directionButton.setAttribute('aria-pressed', String(temperatureRankingSort === 'value'));
-    directionButton.setAttribute('aria-label', `Sortuj według ${temperatureRankingDirection === 'highest' ? 'najwyższych' : 'najniższych'} wartości`);
-    const alphabeticalButton = container.querySelector('[data-ranking-sort="alphabetical"]');
-    const alphabeticalDescending = temperatureRankingSort === 'alphabetical-desc';
-    const alphabeticalSelected = temperatureRankingSort !== 'value';
-    alphabeticalButton.textContent = alphabeticalDescending ? 'Alfabetycznie Z–A' : 'Alfabetycznie A–Z';
-    alphabeticalButton.setAttribute('aria-pressed', String(alphabeticalSelected));
-    alphabeticalButton.setAttribute('aria-label', `Sortuj alfabetycznie ${alphabeticalDescending ? 'od Z do A' : 'od A do Z'}`);
-
     const temperatureSection = container.querySelector('[data-ranking="temperature"]').closest('.ranking-section');
     const precipitationSection = container.querySelector('[data-ranking="precipitation"]').closest('.ranking-section');
     const windSection = container.querySelector('[data-ranking="wind"]').closest('.ranking-section');
@@ -699,6 +697,9 @@ function updateRankingsPanel(hourStr) {
             const station = props.Station_name || props.Station_id || 'Brak nazwy';
             entries.push({
                 station,
+                elevation: typeof props.Elevation === 'string' && !props.Elevation.trim()
+                    ? null
+                    : getRoundedNumericValue(props.Elevation, 0),
                 temperature,
                 precipitation,
                 wind,
@@ -719,15 +720,14 @@ function updateRankingsPanel(hourStr) {
     const temperatureBoundaryValue = primaryRankingValues[0]?.[primaryRankingKey];
     const oppositeTemperatureBoundaryValue = primaryRankingValues[primaryRankingValues.length - 1]?.[primaryRankingKey];
     const isTemperature = primaryMeasurement?.unit === '°C';
-    if (temperatureRankingSort !== 'value') {
-        const alphabeticalDirection = temperatureRankingSort === 'alphabetical-desc' ? -1 : 1;
-        primaryRankingValues.sort((first, second) => alphabeticalDirection * first.station.localeCompare(second.station, 'pl', { sensitivity: 'base' }));
-    }
     const rankings = {
         temperature: {
             values: primaryRankingValues,
             unit: primaryMeasurement?.unit || '°C',
+            shortName: primaryMeasurement?.shortName || selectedTemp.shortName,
             key: primaryRankingKey,
+            sort: temperatureRankingSort,
+            direction: temperatureRankingDirection,
             highlight: isTemperature || temperatureRankingDirection === 'highest',
             highlightLowest: isTemperature || temperatureRankingDirection === 'lowest',
             boundaryValue: isTemperature && temperatureRankingDirection === 'lowest'
@@ -737,8 +737,8 @@ function updateRankingsPanel(hourStr) {
                 ? oppositeTemperatureBoundaryValue
                 : temperatureBoundaryValue
         },
-        precipitation: { values: sortValues('precipitation', 1), unit: 'mm', key: 'precipitation', highlight: true },
-        wind: { values: sortValues('wind', 1), unit: 'km/h', key: 'wind', highlight: true }
+        precipitation: { values: sortValues('precipitation', 1), unit: 'mm', shortName: 'Precip_24h', key: 'precipitation', highlight: true, ...secondaryRankingSorts.precipitation },
+        wind: { values: sortValues('wind', 1), unit: 'km/h', shortName: 'Wind_max', key: 'wind', highlight: true, ...secondaryRankingSorts.wind }
     };
 
     Object.entries(rankings).forEach(([name, ranking]) => {
@@ -750,6 +750,29 @@ function updateRankingsPanel(hourStr) {
                 ? ranking.values[0]?.[ranking.key]
                 : null;
         }
+        const sortColumn = ranking.sort === 'value' ? 'value' : ranking.sort.split('-')[0];
+        const ascending = ranking.sort === 'value'
+            ? ranking.direction === 'lowest'
+            : ranking.sort.endsWith('-asc');
+        ranking.values.sort((first, second) => {
+            if (sortColumn === 'alphabetical') {
+                return (ascending ? 1 : -1) * first.station.localeCompare(second.station, 'pl', { sensitivity: 'base' });
+            }
+            if (sortColumn === 'elevation') {
+                if (first.elevation === null) return second.elevation === null ? 0 : 1;
+                if (second.elevation === null) return -1;
+                return (ascending ? 1 : -1) * (first.elevation - second.elevation);
+            }
+            return (ascending ? 1 : -1) * (first[ranking.key] - second[ranking.key]);
+        });
+        const tableSelector = `[data-ranking-table="${name}"]`;
+        container.querySelector(`${tableSelector} [data-ranking-column="value"]`).textContent = ranking.shortName;
+        ['value', 'alphabetical', 'elevation'].forEach(column => {
+            container.querySelector(`${tableSelector} [data-sort-column="${column}"]`).setAttribute(
+                'aria-sort',
+                column === sortColumn ? (ascending ? 'ascending' : 'descending') : 'none'
+            );
+        });
         body.innerHTML = ranking.values.length
             ? ranking.values.map(entry => {
                 const isBoundaryValue = boundaryValue !== null && entry[ranking.key] === boundaryValue;
@@ -760,9 +783,11 @@ function updateRankingsPanel(hourStr) {
                         ? ' ranking-value-lowest-highlight'
                         : '';
                 const unitSpacing = ranking.unit === '°C' ? '' : ' ';
-                return `<tr><td class="ranking-value${highlightClass}">${formatValue(entry[ranking.key], 1)}${unitSpacing}${ranking.unit}</td><td class="ranking-station${highlightClass}">${escapeHtml(entry.station)}</td></tr>`;
+                const elevation = entry.elevation === null ? '—' : formatValue(entry.elevation, 0);
+                const temperatureClass = ranking.unit === '°C' ? ' ranking-value-temperature' : '';
+                return `<tr><td class="ranking-value${temperatureClass}${highlightClass}">${formatValue(entry[ranking.key], 1)}${unitSpacing}${ranking.unit}</td><td class="ranking-station${highlightClass}">${escapeHtml(entry.station)}</td><td class="ranking-elevation${highlightClass}">${elevation}</td></tr>`;
             }).join('')
-            : '<tr><td class="ranking-empty" colspan="2">Brak danych</td></tr>';
+            : '<tr><td class="ranking-empty" colspan="3">Brak danych</td></tr>';
     });
 }
 
