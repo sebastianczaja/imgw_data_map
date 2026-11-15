@@ -717,6 +717,8 @@ function updateRankingsPanel(hourStr) {
     const primaryRankingKey = singleMeasurement.length === 1 ? 'selectedMeasurement' : 'temperature';
     const primaryRankingValues = sortValues(primaryRankingKey, temperatureRankingDirection === 'highest' ? 1 : -1);
     const temperatureBoundaryValue = primaryRankingValues[0]?.[primaryRankingKey];
+    const oppositeTemperatureBoundaryValue = primaryRankingValues[primaryRankingValues.length - 1]?.[primaryRankingKey];
+    const isTemperature = primaryMeasurement?.unit === '°C';
     if (temperatureRankingSort !== 'value') {
         const alphabeticalDirection = temperatureRankingSort === 'alphabetical-desc' ? -1 : 1;
         primaryRankingValues.sort((first, second) => alphabeticalDirection * first.station.localeCompare(second.station, 'pl', { sensitivity: 'base' }));
@@ -726,9 +728,14 @@ function updateRankingsPanel(hourStr) {
             values: primaryRankingValues,
             unit: primaryMeasurement?.unit || '°C',
             key: primaryRankingKey,
-            highlight: temperatureRankingDirection === 'highest',
-            highlightLowest: temperatureRankingDirection === 'lowest',
-            boundaryValue: temperatureBoundaryValue
+            highlight: isTemperature || temperatureRankingDirection === 'highest',
+            highlightLowest: isTemperature || temperatureRankingDirection === 'lowest',
+            boundaryValue: isTemperature && temperatureRankingDirection === 'lowest'
+                ? oppositeTemperatureBoundaryValue
+                : temperatureBoundaryValue,
+            lowestBoundaryValue: isTemperature && temperatureRankingDirection === 'highest'
+                ? oppositeTemperatureBoundaryValue
+                : temperatureBoundaryValue
         },
         precipitation: { values: sortValues('precipitation', 1), unit: 'mm', key: 'precipitation', highlight: true },
         wind: { values: sortValues('wind', 1), unit: 'km/h', key: 'wind', highlight: true }
@@ -746,9 +753,10 @@ function updateRankingsPanel(hourStr) {
         body.innerHTML = ranking.values.length
             ? ranking.values.map(entry => {
                 const isBoundaryValue = boundaryValue !== null && entry[ranking.key] === boundaryValue;
+                const isLowestBoundaryValue = entry[ranking.key] === (ranking.lowestBoundaryValue ?? boundaryValue);
                 const highlightClass = ranking.highlight && isBoundaryValue
                     ? ' ranking-value-highlight'
-                    : ranking.highlightLowest && isBoundaryValue
+                    : ranking.highlightLowest && isLowestBoundaryValue
                         ? ' ranking-value-lowest-highlight'
                         : '';
                 const unitSpacing = ranking.unit === '°C' ? '' : ' ';
