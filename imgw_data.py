@@ -149,6 +149,17 @@ def get_meteo_day_window():
         start -= timedelta(days=1)
     return start, start + timedelta(days=1)
 
+def get_meteo_day_window_for_date(meteo_date):
+    # Data pliku oznacza lokalny dzien, w ktorym konczy sie doba meteorologiczna.
+    end = datetime(
+        meteo_date.year,
+        meteo_date.month,
+        meteo_date.day,
+        6,
+        tzinfo=timezone.utc,
+    )
+    return end - timedelta(days=1), end
+
 def extract_wind_data(temperature_data):
     """Zwraca (max_porywu, srednia_predkosc) z bieżącej doby meteorologicznej."""
     wind = temperature_data.get("wind") if temperature_data else None
@@ -202,7 +213,7 @@ def extract_precip_data(temperature_data):
         all_precip_amount=len(all_precips) if all_precips and isinstance(all_precips, list) else 0
     )
 
-def extract_temperature_data(temperature_data, przymrozki_data, station_name, lon, lat):
+def extract_temperature_data(temperature_data, przymrozki_data, station_name, lon, lat, meteo_date):
     temp_current = None
     temp_current_time = None
     temp_min_h = None
@@ -231,13 +242,7 @@ def extract_temperature_data(temperature_data, przymrozki_data, station_name, lo
         if valid_temps:
             all_temps = valid_temps
 
-        # Doba meteorologiczna IMGW: 08:00-08:00 (lato) / 07:00-07:00 (zima) czasu lokalnego,
-        # czyli stale 06:00-06:00 UTC; godziny graniczne należą do obu dób.
-        now_utc = datetime.now(timezone.utc)
-        met_start = now_utc.replace(hour=6, minute=0, second=0, microsecond=0)
-        if met_start > now_utc:
-            met_start -= timedelta(days=1)
-        met_end = met_start + timedelta(days=1)
+        met_start, met_end = get_meteo_day_window_for_date(meteo_date)
         met_temps = []
         for t in temperature_data.get("temperature", []):
             if t.get("value") is None or t.get("date") is None:
@@ -485,7 +490,14 @@ async def process_station(session, data, przymrozki_data, previous_date, previou
             f"IMGW zwróciło nieprawidłowy profil stacji {data['kod_stacji']}."
         )
 
-    extracted_temps = extract_temperature_data(temperature_data, przymrozki_data, data["nazwa_stacji"], data["lon"], data["lat"])
+    extracted_temps = extract_temperature_data(
+        temperature_data,
+        przymrozki_data,
+        data["nazwa_stacji"],
+        data["lon"],
+        data["lat"],
+        now_local.date(),
+    )
     extracted_precips = extract_precip_data(temperature_data)
     wind_max_day, wind_avg_day = extract_wind_data(temperature_data)
     ground_temp, ground_temp_time = extract_ground_temperature(data)
@@ -558,7 +570,14 @@ async def process_missing_station(
             f"IMGW zwróciło nieprawidłowy profil stacji {station_info.get('Station_id')}."
         )
 
-    extracted_temps = extract_temperature_data(temperature_data, przymrozki_data, station_info.get("Station_name"), station_info.get("coordinates")[0], station_info.get("coordinates")[1])
+    extracted_temps = extract_temperature_data(
+        temperature_data,
+        przymrozki_data,
+        station_info.get("Station_name"),
+        station_info.get("coordinates")[0],
+        station_info.get("coordinates")[1],
+        now_local.date(),
+    )
     extracted_precips = extract_precip_data(temperature_data)
     wind_max_day, wind_avg_day = extract_wind_data(temperature_data)
     
