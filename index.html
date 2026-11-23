@@ -599,6 +599,34 @@
             outline: 1px solid var(--slider-accent-strong);
             outline-offset: -1px;
         }
+        .ranking-parameter-header {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 1px;
+        }
+        .ranking-parameter-select {
+            flex: 1;
+            width: 0;
+            min-width: 80px;
+            max-width: none;
+            padding: 2px 1px;
+            border: 1px solid var(--input-border);
+            border-radius: 3px;
+            background: var(--input-bg);
+            color: var(--text-main);
+            font: inherit;
+        }
+        .ranking-parameter-select:focus-visible {
+            outline: 1px solid var(--slider-accent-strong);
+            outline-offset: 1px;
+        }
+        .ranking-parameter-header button {
+            flex: 0 0 auto;
+        }
+        .ranking-section th.ranking-parameter-column {
+            min-width: 104px;
+        }
         .ranking-section th[aria-sort="ascending"] button::after {
             content: " ▲";
             font-size: 8px;
@@ -606,6 +634,17 @@
         .ranking-section th[aria-sort="descending"] button::after {
             content: " ▼";
             font-size: 8px;
+        }
+        .ranking-section th.ranking-parameter-column[aria-sort="none"] button::after,
+        .ranking-section th[data-sort-column="alphabetical"][aria-sort="none"] button::after,
+        .ranking-section th[data-sort-column="elevation"][aria-sort="none"] .ranking-elevation-title::after {
+            content: "";
+            display: inline-block;
+            width: 5px;
+            height: 5px;
+            margin-left: 3px;
+            background: currentColor;
+            vertical-align: middle;
         }
         .ranking-section th:last-child button::after {
             content: none;
@@ -673,16 +712,8 @@
             color: #ef5350 !important;
             font-weight: 700 !important;
         }
-        .ranking-value-lowest-highlight {
-            color: #42a5f5 !important;
-            font-weight: 700 !important;
-        }
         .ranking-station.ranking-value-highlight {
             color: #ef5350 !important;
-            font-weight: 700 !important;
-        }
-        .ranking-station.ranking-value-lowest-highlight {
-            color: #42a5f5 !important;
             font-weight: 700 !important;
         }
         .ranking-empty {

@@ -158,7 +158,21 @@ const tempLayerMapping = [
     { key: 'Tg', label: 'Temperatura przy gruncie (Tg)', shortName: 'Tg', group: etykietyTg }
 ];
 
+const rankingParameterDefinitions = [
+    ...tempLayerMapping.map(parameter => ({
+        key: parameter.key,
+        shortName: parameter.shortName,
+        unit: '°C',
+        category: 'temperature'
+    })),
+    { key: 'Precip_24h', shortName: 'Precip_24h', unit: 'mm', category: 'precipitation' },
+    { key: 'Precip_hour', shortName: 'Precip_hour', unit: 'mm', category: 'precipitation' },
+    { key: 'Wind_avg', shortName: 'Wind_avg', unit: 'km/h', category: 'wind' },
+    { key: 'Wind_max', shortName: 'Wind_max', unit: 'km/h', category: 'wind' }
+];
+
 let activeTempParam = 'Ta';
+let rankingParameterOverride = null;
 let currentHourStr = '12';
 
 etykietyTa.addTo(map);
@@ -385,6 +399,29 @@ function getFeatureTempValue(props, tempKey, hourStr) {
     return getRoundedNumericValue(props[tempKey]);
 }
 
+function getRankingParameterValue(props, parameter, hourStr) {
+    if (parameter.category === 'temperature') {
+        return getFeatureTempValue(props, parameter.key, hourStr);
+    }
+    if (parameter.key === 'Precip_24h') {
+        return props.Precip_24h == null ? null : Number(props.Precip_24h);
+    }
+    if (parameter.key === 'Precip_hour') {
+        const value = props.Hourly?.[hourStr]?.Precip ?? props.Precip_10min;
+        return value == null ? null : Number(value);
+    }
+    if (parameter.key === 'Wind_avg') {
+        const value = props.Hourly?.[hourStr]?.Wind_avg;
+        return value == null ? null : Number(convertMetersPerSecondToKilometersPerHour(value));
+    }
+    if (parameter.key === 'Wind_max') {
+        return props.Wind_max == null
+            ? null
+            : Number(convertMetersPerSecondToKilometersPerHour(props.Wind_max));
+    }
+    return null;
+}
+
 function clearMapData() {
     [etykietyTa, etykietyTmin, etykietyTmax, etykietyTminHour, etykietyTmaxHour, etykietyTg, etykietyOpady24h, etykietyOpady10min, etykietyWindAvg, etykietyWindMax, etykietyElevation, etykietyStationName].forEach(g => { try { g.clearLayers(); } catch (e){} });
 }
@@ -586,12 +623,22 @@ function buildRankingsControl() {
     rankingsControl = L.control({ position: 'topright' });
     rankingsControl.onAdd = function () {
         const div = L.DomUtil.create('div', 'leaflet-control compact-panel rankings-control');
-        const rankingTable = name => `
+        const rankingTable = name => {
+            const valueHeader = name === 'temperature'
+                ? `<div class="ranking-parameter-header">
+                    <select class="ranking-parameter-select" data-ranking-parameter aria-label="Parametr zestawienia">
+                        ${rankingParameterDefinitions.map(parameter => `<option value="${parameter.key}">${parameter.shortName}</option>`).join('')}
+                    </select>
+                    <button type="button" data-ranking-column="value" aria-label="Sortuj według parametru"></button>
+                </div>`
+                : `<button type="button" data-ranking-column="value">Wartość</button>`;
+            return `
             <div class="ranking-table-wrap"><table data-ranking-table="${name}"><thead><tr>
-                <th scope="col" data-sort-column="value"><button type="button" data-ranking-column="value">Wartość</button></th>
+                <th scope="col" data-sort-column="value"${name === 'temperature' ? ' class="ranking-parameter-column"' : ''}>${valueHeader}</th>
                 <th scope="col" data-sort-column="alphabetical"><button type="button" data-ranking-column="alphabetical">Nazwa stacji</button></th>
                 <th scope="col" data-sort-column="elevation"><button type="button" data-ranking-column="elevation"><span class="ranking-elevation-title">Wys.</span><br><span>[m n.p.m.]</span></button></th>
             </tr></thead><tbody data-ranking="${name}"></tbody></table></div>`;
+        };
         div.innerHTML = `
             <div class="panel-global-header rankings-header">
                 <div class="panel-main-title">Dane</div>
@@ -611,6 +658,12 @@ function buildRankingsControl() {
                 </section>
             </div>
         `;
+
+        const rankingParameterSelect = div.querySelector('[data-ranking-parameter]');
+        rankingParameterSelect.addEventListener('change', () => {
+            rankingParameterOverride = rankingParameterSelect.value;
+            updateRankingsPanel(currentHourStr);
+        });
 
         const toggle = div.querySelector('.rankings-toggle');
         toggle.addEventListener('click', () => {
@@ -675,6 +728,7 @@ function updateRankingsPanel(hourStr) {
     const selectedMeasurements = tempLayerMapping
         .filter(parameter => map.hasLayer(parameter.group))
         .map(parameter => ({
+            key: parameter.key,
             layer: parameter.group,
             shortName: parameter.shortName,
             unit: '°C',
@@ -682,12 +736,14 @@ function updateRankingsPanel(hourStr) {
         }));
     selectedMeasurements.push(
         {
+            key: 'Precip_24h',
             layer: etykietyOpady24h,
             shortName: 'Precip_24h',
             unit: 'mm',
             getValue: props => props.Precip_24h == null ? null : Number(props.Precip_24h)
         },
         {
+            key: 'Precip_hour',
             layer: etykietyOpady10min,
             shortName: 'Precip_hour',
             unit: 'mm',
@@ -697,6 +753,7 @@ function updateRankingsPanel(hourStr) {
             }
         },
         {
+            key: 'Wind_avg',
             layer: etykietyWindAvg,
             shortName: 'Wind_avg',
             unit: 'km/h',
@@ -706,6 +763,7 @@ function updateRankingsPanel(hourStr) {
             }
         },
         {
+            key: 'Wind_max',
             layer: etykietyWindMax,
             shortName: 'Wind_max',
             unit: 'km/h',
@@ -719,15 +777,26 @@ function updateRankingsPanel(hourStr) {
         ? singleMeasurement[0]
         : selectedTempLayer
             ? {
+                key: selectedTemp.key,
                 shortName: selectedTemp.shortName,
                 unit: '°C',
                 getValue: props => getFeatureTempValue(props, selectedTemp.key, hStr)
             }
             : null;
+    const selectedRankingKey = rankingParameterOverride
+        || primaryMeasurement?.key
+        || selectedTemp.key;
+    const selectedRankingParameter = rankingParameterDefinitions.find(
+        parameter => parameter.key === selectedRankingKey
+    ) || rankingParameterDefinitions[0];
+    const rankingParameterSelect = container.querySelector('[data-ranking-parameter]');
+    if (rankingParameterSelect) {
+        rankingParameterSelect.value = selectedRankingParameter.key;
+    }
     const temperatureSection = container.querySelector('[data-ranking="temperature"]').closest('.ranking-section');
     const precipitationSection = container.querySelector('[data-ranking="precipitation"]').closest('.ranking-section');
     const windSection = container.querySelector('[data-ranking="wind"]').closest('.ranking-section');
-    temperatureSection.hidden = !primaryMeasurement;
+    temperatureSection.hidden = false;
     precipitationSection.hidden = singleMeasurement.length === 1 || !map.hasLayer(etykietyOpady24h);
     windSection.hidden = singleMeasurement.length === 1
         || (!map.hasLayer(etykietyWindAvg) && !map.hasLayer(etykietyWindMax));
@@ -737,7 +806,6 @@ function updateRankingsPanel(hourStr) {
         globalGeoJsonData.features.forEach(feature => {
             const props = feature && feature.properties;
             if (!props || props.Status !== 'ACTIVE') return;
-            const temperature = getFeatureTempValue(props, selectedTemp.key, hStr);
             const precipitation = props.Precip_24h !== undefined && props.Precip_24h !== null ? Number(props.Precip_24h) : null;
             const wind = props.Wind_max !== undefined && props.Wind_max !== null ? Number(convertMetersPerSecondToKilometersPerHour(props.Wind_max)) : null;
             const station = props.Station_name || props.Station_id || 'Brak nazwy';
@@ -747,12 +815,9 @@ function updateRankingsPanel(hourStr) {
                 elevation: typeof props.Elevation === 'string' && !props.Elevation.trim()
                     ? null
                     : getRoundedNumericValue(props.Elevation, 0),
-                temperature,
                 precipitation,
                 wind,
-                selectedMeasurement: singleMeasurement.length === 1
-                    ? singleMeasurement[0].getValue(props)
-                    : null
+                selectedMeasurement: getRankingParameterValue(props, selectedRankingParameter, hStr)
             });
         });
     }
@@ -762,30 +827,26 @@ function updateRankingsPanel(hourStr) {
             .filter(entry => entry[key] !== null && Number.isFinite(entry[key]))
             .sort((first, second) => direction * (second[key] - first[key]));
     };
-    const primaryRankingKey = singleMeasurement.length === 1 ? 'selectedMeasurement' : 'temperature';
+    const primaryRankingKey = 'selectedMeasurement';
     const primaryRankingValues = sortValues(primaryRankingKey, temperatureRankingDirection === 'highest' ? 1 : -1);
-    const temperatureBoundaryValue = primaryRankingValues[0]?.[primaryRankingKey];
-    const oppositeTemperatureBoundaryValue = primaryRankingValues[primaryRankingValues.length - 1]?.[primaryRankingKey];
-    const isTemperature = primaryMeasurement?.unit === '°C';
+    const primaryBoundaryValue = primaryRankingValues[0]?.[primaryRankingKey];
+    const oppositePrimaryBoundaryValue = primaryRankingValues[primaryRankingValues.length - 1]?.[primaryRankingKey];
     const rankings = {
         temperature: {
             values: primaryRankingValues,
-            unit: primaryMeasurement?.unit || '°C',
-            shortName: primaryMeasurement?.shortName || selectedTemp.shortName,
+            unit: selectedRankingParameter.unit,
+            shortName: selectedRankingParameter.shortName,
+            category: selectedRankingParameter.category,
             key: primaryRankingKey,
             sort: temperatureRankingSort,
             direction: temperatureRankingDirection,
-            highlight: isTemperature || temperatureRankingDirection === 'highest',
-            highlightLowest: isTemperature || temperatureRankingDirection === 'lowest',
-            boundaryValue: isTemperature && temperatureRankingDirection === 'lowest'
-                ? oppositeTemperatureBoundaryValue
-                : temperatureBoundaryValue,
-            lowestBoundaryValue: isTemperature && temperatureRankingDirection === 'highest'
-                ? oppositeTemperatureBoundaryValue
-                : temperatureBoundaryValue
+            highlight: true,
+            boundaryValue: temperatureRankingDirection === 'lowest'
+                ? oppositePrimaryBoundaryValue
+                : primaryBoundaryValue
         },
-        precipitation: { values: sortValues('precipitation', 1), unit: 'mm', shortName: 'Precip_24h', key: 'precipitation', highlight: true, ...secondaryRankingSorts.precipitation },
-        wind: { values: sortValues('wind', 1), unit: 'km/h', shortName: 'Wind_max', key: 'wind', highlight: true, ...secondaryRankingSorts.wind }
+        precipitation: { values: sortValues('precipitation', 1), unit: 'mm', shortName: 'Precip_24h', category: 'precipitation', key: 'precipitation', highlight: true, ...secondaryRankingSorts.precipitation },
+        wind: { values: sortValues('wind', 1), unit: 'km/h', shortName: 'Wind_max', category: 'wind', key: 'wind', highlight: true, ...secondaryRankingSorts.wind }
     };
 
     Object.entries(rankings).forEach(([name, ranking]) => {
@@ -798,7 +859,7 @@ function updateRankingsPanel(hourStr) {
         body.onmouseleave = () => setHoveredRankingStation(null);
         let boundaryValue = ranking.boundaryValue;
         if (boundaryValue === undefined) {
-            boundaryValue = ranking.highlight || ranking.highlightLowest
+            boundaryValue = ranking.highlight
                 ? ranking.values[0]?.[ranking.key]
                 : null;
         }
@@ -818,7 +879,9 @@ function updateRankingsPanel(hourStr) {
             return (ascending ? 1 : -1) * (first[ranking.key] - second[ranking.key]);
         });
         const tableSelector = `[data-ranking-table="${name}"]`;
-        container.querySelector(`${tableSelector} [data-ranking-column="value"]`).textContent = ranking.shortName;
+        if (name !== 'temperature') {
+            container.querySelector(`${tableSelector} [data-ranking-column="value"]`).textContent = ranking.shortName;
+        }
         ['value', 'alphabetical', 'elevation'].forEach(column => {
             container.querySelector(`${tableSelector} [data-sort-column="${column}"]`).setAttribute(
                 'aria-sort',
@@ -828,18 +891,18 @@ function updateRankingsPanel(hourStr) {
         body.innerHTML = ranking.values.length
             ? ranking.values.map(entry => {
                 const isBoundaryValue = boundaryValue !== null && entry[ranking.key] === boundaryValue;
-                const isLowestBoundaryValue = entry[ranking.key] === (ranking.lowestBoundaryValue ?? boundaryValue);
                 const highlightClass = ranking.highlight && isBoundaryValue
                     ? ' ranking-value-highlight'
-                    : ranking.highlightLowest && isLowestBoundaryValue
-                        ? ' ranking-value-lowest-highlight'
-                        : '';
+                    : '';
                 const unitSpacing = ranking.unit === '°C' ? '' : ' ';
                 const elevation = entry.elevation === null ? '—' : formatValue(entry.elevation, 0);
                 const temperatureClass = ranking.unit === '°C' ? ' ranking-value-temperature' : '';
-                const rowHighlightColor = ranking.unit === '°C'
+                const rowHighlightColor = ranking.category === 'temperature'
                     ? getTemperatureStyle(entry[ranking.key]).bg
-                    : getLabelScaleColor(entry[ranking.key], ranking.unit === 'mm' ? precipLabelScale : windLabelScale);
+                    : getLabelScaleColor(
+                        entry[ranking.key],
+                        ranking.category === 'precipitation' ? precipLabelScale : windLabelScale
+                    );
                 return `<tr data-station-id="${escapeHtml(entry.stationId)}" data-highlight-color="${escapeHtml(rowHighlightColor)}"><td class="ranking-value${temperatureClass}${highlightClass}">${formatValue(entry[ranking.key], 1)}${unitSpacing}${ranking.unit}</td><td class="ranking-station${highlightClass}">${escapeHtml(entry.station)}</td><td class="ranking-elevation${highlightClass}">${elevation}</td></tr>`;
             }).join('')
             : '<tr><td class="ranking-empty" colspan="3">Brak danych</td></tr>';
@@ -1056,6 +1119,7 @@ function buildUnifiedLayerControl() {
             row.appendChild(input);
             row.appendChild(document.createTextNode(label));
             row.addEventListener('change', () => {
+                rankingParameterOverride = null;
                 if (input.checked) {
                     map.addLayer(layerGroup);
                     const tempItem = tempLayerMapping.find(t => t.group === layerGroup);

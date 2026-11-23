@@ -10,9 +10,16 @@ const functionSource = (name, nextName) => source.slice(
     source.indexOf(`function ${nextName}(`)
 );
 
-function renderRanking(parameter, direction, sort, features, ranking = 'temperature', secondarySort = { sort: 'value', direction: 'highest' }) {
+function renderRanking(parameter, direction, sort, features, ranking = 'temperature', secondarySort = { sort: 'value', direction: 'highest' }, rankingParameterOverride = null) {
     const groups = ['Ta', 'Tmin_hour', 'Tmax_hour', 'Tmin', 'Tmax', 'Tg'];
     const tempLayerMapping = groups.map(key => ({ key, shortName: key, group: key }));
+    const rankingParameterDefinitions = [
+        ...groups.map(key => ({ key, shortName: key, unit: '°C', category: 'temperature' })),
+        { key: 'Precip_24h', shortName: 'Precip_24h', unit: 'mm', category: 'precipitation' },
+        { key: 'Precip_hour', shortName: 'Precip_hour', unit: 'mm', category: 'precipitation' },
+        { key: 'Wind_avg', shortName: 'Wind_avg', unit: 'km/h', category: 'wind' },
+        { key: 'Wind_max', shortName: 'Wind_max', unit: 'km/h', category: 'wind' }
+    ];
     const selectedLayers = Array.isArray(parameter) ? parameter : [parameter];
     const elements = {};
     const container = {
@@ -29,6 +36,8 @@ function renderRanking(parameter, direction, sort, features, ranking = 'temperat
     };
     const context = vm.createContext({
         tempLayerMapping,
+        rankingParameterDefinitions,
+        rankingParameterOverride,
         map: { hasLayer: layer => selectedLayers.includes(layer) },
         etykietyOpady24h: 'Precip_24h',
         etykietyOpady10min: 'Precip_hour',
@@ -52,6 +61,7 @@ function renderRanking(parameter, direction, sort, features, ranking = 'temperat
         functionSource('getSelectedTempParam', 'getFreshGroundTemperature'),
         functionSource('getFreshGroundTemperature', 'getFeatureTempValue'),
         source.slice(source.indexOf('function getFeatureTempValue('), source.indexOf('\n}', source.indexOf('function getFeatureTempValue(')) + 2),
+        functionSource('getRankingParameterValue', 'clearMapData'),
         functionSource('getStationHighlightKey', 'setStationLabelHighlight'),
         functionSource('escapeHtml', 'buildRankingsControl'),
         functionSource('updateRankingsPanel', 'showNoDataState'),
@@ -82,7 +92,7 @@ test('ranking rows expose station ids for map label highlighting', () => {
     assert.match(rowFor(html, 'Alfa'), /^<tr data-station-id="12345">/);
 });
 
-test('all temperature parameters highlight both extremes for every sort order', () => {
+test('all temperature parameters highlight only maximum values for every sort order', () => {
     const features = [
         station('Zulu', 10.04), station('Alfa', -2), station('Beta', 4),
         station('Gamma', 10.03), station('Delta', -2), station('Inactive', 100, 'INACTIVE'),
@@ -96,7 +106,7 @@ test('all temperature parameters highlight both extremes for every sort order', 
                     assert.match(rowFor(html, name), /ranking-value-highlight/, `${parameter} ${direction} ${sort} ${name}`);
                 }
                 for (const name of ['Alfa', 'Delta']) {
-                    assert.match(rowFor(html, name), /ranking-value-lowest-highlight/, `${parameter} ${direction} ${sort} ${name}`);
+                    assert.doesNotMatch(rowFor(html, name), /highlight/, `${parameter} ${direction} ${sort} ${name}`);
                 }
                 assert.doesNotMatch(rowFor(html, 'Beta'), /highlight/);
                 assert.doesNotMatch(html, /Inactive|Missing/);
@@ -105,20 +115,29 @@ test('all temperature parameters highlight both extremes for every sort order', 
     }
 });
 
+test('parameter dropdown selection drives the primary ranking independently of map tabs', () => {
+    const features = [station('Alfa', 1), station('Beta', 2)];
+    features[0].properties.Tmin_hour = -5;
+    features[1].properties.Tmin_hour = 4;
+    const html = renderRanking('Ta', 'highest', 'value', features, 'temperature', undefined, 'Tmin_hour');
+    assert.match(rowFor(html, 'Alfa'), /<td class="ranking-value ranking-value-temperature">-5\.0°C<\/td>/);
+    assert.match(rowFor(html, 'Beta'), /<td class="ranking-value ranking-value-temperature">4\.0°C<\/td>/);
+});
+
 test('equal temperature extremes keep the maximum color, as on the map', () => {
     const html = renderRanking('Ta', 'lowest', 'value', [station('Alfa', 2), station('Beta', 2)]);
     assert.match(rowFor(html, 'Alfa'), /ranking-value-highlight/);
     assert.doesNotMatch(html, /ranking-value-lowest-highlight/);
 });
 
-test('non-temperature ranking retains its direction-dependent highlight', () => {
+test('non-temperature ranking never highlights its lowest values', () => {
     const features = [station('Alfa', 1), station('Beta', 3)];
     const highest = renderRanking('Precip_24h', 'highest', 'value', features);
     assert.match(rowFor(highest, 'Beta'), /ranking-value-highlight/);
     assert.doesNotMatch(rowFor(highest, 'Alfa'), /highlight/);
     const lowest = renderRanking('Precip_24h', 'lowest', 'alphabetical-asc', features);
-    assert.match(rowFor(lowest, 'Alfa'), /ranking-value-lowest-highlight/);
-    assert.doesNotMatch(rowFor(lowest, 'Beta'), /highlight/);
+    assert.match(rowFor(lowest, 'Beta'), /ranking-value-highlight/);
+    assert.doesNotMatch(rowFor(lowest, 'Alfa'), /highlight/);
 });
 
 test('ranking rows use temperature, precipitation, and wind label colors', () => {
@@ -159,11 +178,7 @@ test('extreme rows highlight every cell, including missing elevation', () => {
             assert.equal((rowFor(html, name).match(/ranking-value-highlight/g) || []).length, 3);
         }
         assert.doesNotMatch(rowFor(html, 'Delta'), /highlight/);
-        if (ranking === 'temperature') {
-            assert.equal((rowFor(html, 'Alfa').match(/ranking-value-lowest-highlight/g) || []).length, 3);
-        } else {
-            assert.doesNotMatch(rowFor(html, 'Alfa'), /highlight/);
-        }
+        assert.doesNotMatch(rowFor(html, 'Alfa'), /highlight/);
     }
 });
 
@@ -194,8 +209,13 @@ test('sorting by elevation keeps missing values last and preserves extremes', ()
 test('column clicks toggle sorting independently and save the primary ranking', () => {
     const buttons = {};
     const button = name => buttons[name] = { addEventListener: (event, handler) => { buttons[name].click = handler; } };
+    const rankingParameterSelect = {
+        value: 'Ta',
+        addEventListener: (event, handler) => { rankingParameterSelect.change = handler; }
+    };
     const controls = {
-        '.rankings-toggle': button('toggle')
+        '.rankings-toggle': button('toggle'),
+        '[data-ranking-parameter]': rankingParameterSelect
     };
     const tables = ['temperature', 'precipitation', 'wind'].map(name => ({
         dataset: { rankingTable: name },
@@ -214,6 +234,13 @@ test('column clicks toggle sorting independently and save the primary ranking', 
         rankingsControl: null,
         map: {},
         currentHourStr: '12',
+        rankingParameterOverride: null,
+        rankingParameterDefinitions: [
+            { key: 'Ta', shortName: 'Ta' },
+            { key: 'Tmin_hour', shortName: 'Tmin_hour' },
+            { key: 'Precip_24h', shortName: 'Precip_24h' },
+            { key: 'Wind_max', shortName: 'Wind_max' }
+        ],
         temperatureRankingSort: 'value',
         temperatureRankingDirection: 'highest',
         secondaryRankingSorts: {
@@ -232,6 +259,13 @@ test('column clicks toggle sorting independently and save the primary ranking', 
     vm.runInContext(functionSource('buildRankingsControl', 'updateRankingsPanel') + '\nbuildRankingsControl();', context);
 
     assert.match(div.innerHTML, /<section class="ranking-section">\s*<div class="ranking-table-wrap"><table data-ranking-table="temperature">/);
+    assert.match(div.innerHTML, /<select class="ranking-parameter-select" data-ranking-parameter/);
+    for (const parameter of ['Ta', 'Tmin_hour', 'Precip_24h', 'Wind_max']) {
+        assert.match(div.innerHTML, new RegExp(`<option value="${parameter}">${parameter}<\\/option>`));
+    }
+    rankingParameterSelect.value = 'Wind_max';
+    rankingParameterSelect.change();
+    assert.equal(context.rankingParameterOverride, 'Wind_max');
     buttons['temperature-value'].click();
     assert.deepEqual(saved.at(-1), ['lowest', 'value']);
     buttons['temperature-alphabetical'].click();
