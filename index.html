@@ -84,6 +84,11 @@
             border: none !important; 
         }
 
+        .stacja-etykieta.ranking-station-hover {
+            box-shadow: 0 0 0 2px var(--station-highlight-color, currentColor), 0 0 8px 4px var(--station-highlight-color, currentColor) !important;
+            z-index: 1000 !important;
+        }
+
         .etykieta-gora { margin-top: -5px !important; }
         .etykieta-dol { margin-top: 5px !important; }
 
@@ -648,6 +653,21 @@
         }
         .ranking-value {
             font-weight: 400;
+        }
+        .ranking-section tr.ranking-row-hover > td {
+            background-color: color-mix(in srgb, var(--station-highlight-color) 25%, transparent) !important;
+            box-shadow: inset 0 1px 0 color-mix(in srgb, var(--station-highlight-color) 55%, transparent),
+                inset 0 -1px 0 color-mix(in srgb, var(--station-highlight-color) 55%, transparent);
+        }
+        .ranking-section tr.ranking-row-hover > td:first-child {
+            box-shadow: inset 1px 0 0 color-mix(in srgb, var(--station-highlight-color) 55%, transparent),
+                inset 0 1px 0 color-mix(in srgb, var(--station-highlight-color) 55%, transparent),
+                inset 0 -1px 0 color-mix(in srgb, var(--station-highlight-color) 55%, transparent);
+        }
+        .ranking-section tr.ranking-row-hover > td:last-child {
+            box-shadow: inset -1px 0 0 color-mix(in srgb, var(--station-highlight-color) 55%, transparent),
+                inset 0 1px 0 color-mix(in srgb, var(--station-highlight-color) 55%, transparent),
+                inset 0 -1px 0 color-mix(in srgb, var(--station-highlight-color) 55%, transparent);
         }
         .ranking-value-highlight {
             color: #ef5350 !important;

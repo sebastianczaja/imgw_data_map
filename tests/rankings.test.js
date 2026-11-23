@@ -46,9 +46,13 @@ function renderRanking(parameter, direction, sort, features, ranking = 'temperat
         functionSource('formatValue', 'getRoundedNumericValue'),
         functionSource('getRoundedNumericValue', 'convertMetersPerSecondToKilometersPerHour'),
         functionSource('convertMetersPerSecondToKilometersPerHour', 'getLabelScaleColor'),
+        source.slice(source.indexOf('const tempScale = ['), source.indexOf('function getLabelScaleColor(')),
+        functionSource('getLabelScaleColor', 'getTemperatureStyle'),
+        functionSource('getTemperatureStyle', 'addDataToParamGroup'),
         functionSource('getSelectedTempParam', 'getFreshGroundTemperature'),
         functionSource('getFreshGroundTemperature', 'getFeatureTempValue'),
         source.slice(source.indexOf('function getFeatureTempValue('), source.indexOf('\n}', source.indexOf('function getFeatureTempValue(')) + 2),
+        functionSource('getStationHighlightKey', 'setStationLabelHighlight'),
         functionSource('escapeHtml', 'buildRankingsControl'),
         functionSource('updateRankingsPanel', 'showNoDataState'),
         "let activeTempParam = 'Ta'; updateRankingsPanel('12');"
@@ -66,8 +70,17 @@ function station(name, value, status = 'ACTIVE') {
 }
 
 function rowFor(html, name) {
-    return html.match(new RegExp(`<tr>[^<]*<td[^>]*>[^<]*</td><td[^>]*>${name}</td><td[^>]*>[^<]*</td></tr>`))?.[0];
+    return html.match(/<tr[^>]*>[\s\S]*?<\/tr>/g)?.find(row =>
+        row.includes('class="ranking-station') && row.includes(`>${name}</td>`)
+    );
 }
+
+test('ranking rows expose station ids for map label highlighting', () => {
+    const feature = station('Alfa', 2);
+    feature.properties.Station_id = '12345';
+    const html = renderRanking('Ta', 'highest', 'value', [feature]);
+    assert.match(rowFor(html, 'Alfa'), /^<tr data-station-id="12345">/);
+});
 
 test('all temperature parameters highlight both extremes for every sort order', () => {
     const features = [
@@ -106,6 +119,21 @@ test('non-temperature ranking retains its direction-dependent highlight', () => 
     const lowest = renderRanking('Precip_24h', 'lowest', 'alphabetical-asc', features);
     assert.match(rowFor(lowest, 'Alfa'), /ranking-value-lowest-highlight/);
     assert.doesNotMatch(rowFor(lowest, 'Beta'), /highlight/);
+});
+
+test('ranking rows use temperature, precipitation, and wind label colors', () => {
+    const temperatureStation = station('Temperature', 10);
+    const temperatureHtml = renderRanking('Ta', 'highest', 'value', [temperatureStation]);
+    assert.match(rowFor(temperatureHtml, 'Temperature'), /data-highlight-color="rgba\(55, 160, 50, 0\.98\)"/);
+
+    const precipitationStation = station('Precipitation', 5);
+    const precipitationHtml = renderRanking('Precip_24h', 'highest', 'value', [precipitationStation]);
+    assert.match(rowFor(precipitationHtml, 'Precipitation'), /data-highlight-color="rgba\(145, 210, 250, 0\.98\)"/);
+
+    const windStation = station('Wind', 10);
+    windStation.properties.Wind_max = 10;
+    const windHtml = renderRanking('Wind_max', 'highest', 'value', [windStation]);
+    assert.match(rowFor(windHtml, 'Wind'), /data-highlight-color="rgba\(75, 174, 117, 0\.98\)"/);
 });
 
 test('all rankings show station elevation in a separate column', () => {

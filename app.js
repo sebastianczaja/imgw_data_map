@@ -117,6 +117,38 @@ const etykietyWindMax = L.layerGroup();
 const etykietyElevation = L.layerGroup();
 const etykietyStationName = L.layerGroup();
 
+let hoveredRankingStationId = null;
+
+function getStationHighlightKey(properties) {
+    return String(properties?.Station_id ?? properties?.Station_name ?? '');
+}
+
+function setStationLabelHighlight(label, highlighted) {
+    if (highlighted && !label.style.getPropertyValue('--station-highlight-color')) {
+        const backgroundElement = label.firstElementChild || label;
+        label.style.setProperty(
+            '--station-highlight-color',
+            getComputedStyle(backgroundElement).backgroundColor
+        );
+    }
+    label.classList.toggle('ranking-station-hover', highlighted);
+}
+
+function setHoveredRankingStation(stationId, rankingRow = null) {
+    hoveredRankingStationId = stationId;
+    document.querySelectorAll('.stacja-etykieta[data-station-id]').forEach(label => {
+        setStationLabelHighlight(label, stationId !== null && label.dataset.stationId === stationId);
+    });
+    document.querySelectorAll('.ranking-section tr.ranking-row-hover').forEach(row => {
+        row.classList.remove('ranking-row-hover');
+        row.style.removeProperty('--station-highlight-color');
+    });
+    if (rankingRow) {
+        rankingRow.style.setProperty('--station-highlight-color', rankingRow.dataset.highlightColor);
+        rankingRow.classList.add('ranking-row-hover');
+    }
+}
+
 const tempLayerMapping = [
     { key: 'Ta', label: 'Temperatura aktualna (Ta)', shortName: 'Ta', group: etykietyTa },
     { key: 'Tmin_hour', label: 'Temperatura min. godzinowa (Tmin_hour)', shortName: 'Tmin_hour', group: etykietyTminHour },
@@ -264,11 +296,13 @@ function addDataToParamGroup(rawValue, suffix, className, positionClass, latlng,
         const isWindLayer = ['wiatr-avg', 'wiatr-max'].includes(className);
 
         let tooltipContent;
+        let stationHighlightColor = null;
         if (isTemperatureLayer || isPrecipitationLayer || isWindLayer) {
             let borderStyle = '1px solid #666';
             const labelColor = isTemperatureLayer
                 ? getTemperatureStyle(rawValue).bg
                 : getLabelScaleColor(rawValue, isPrecipitationLayer ? precipLabelScale : windLabelScale);
+            stationHighlightColor = labelColor;
             const textColor = '#000000';
             tooltipContent = `<div style="background: ${labelColor} !important; color: ${textColor} !important; text-shadow: none; border: ${borderStyle} !important; box-sizing: content-box !important; width: 100%; height: 100%; display: inline-flex; align-items: center; justify-content: center; margin: -1px -2px; padding: 0 2px; border-radius: 2px;">${formatted}${suffix}</div>`;
         } else {
@@ -276,6 +310,18 @@ function addDataToParamGroup(rawValue, suffix, className, positionClass, latlng,
         }
 
         const lbl = L.tooltip({ permanent: true, direction: direction, offset: [0, 0], className: fullClassName }).setContent(tooltipContent).setLatLng(latlng);
+        const stationId = getStationHighlightKey(feature?.properties);
+        if (stationId) {
+            lbl.on('add', () => {
+                const element = lbl.getElement();
+                if (!element) return;
+                element.dataset.stationId = stationId;
+                if (stationHighlightColor) {
+                    element.style.setProperty('--station-highlight-color', stationHighlightColor);
+                }
+                setStationLabelHighlight(element, hoveredRankingStationId === stationId);
+            });
+        }
         group.addLayer(marker);
         group.addLayer(lbl);
     }
@@ -697,6 +743,7 @@ function updateRankingsPanel(hourStr) {
             const station = props.Station_name || props.Station_id || 'Brak nazwy';
             entries.push({
                 station,
+                stationId: getStationHighlightKey(props) || station,
                 elevation: typeof props.Elevation === 'string' && !props.Elevation.trim()
                     ? null
                     : getRoundedNumericValue(props.Elevation, 0),
@@ -744,6 +791,11 @@ function updateRankingsPanel(hourStr) {
     Object.entries(rankings).forEach(([name, ranking]) => {
         const body = container.querySelector(`[data-ranking="${name}"]`);
         if (!body) return;
+        body.onmouseover = event => {
+            const row = event.target.closest('tr[data-station-id]');
+            if (row) setHoveredRankingStation(row.dataset.stationId, row);
+        };
+        body.onmouseleave = () => setHoveredRankingStation(null);
         let boundaryValue = ranking.boundaryValue;
         if (boundaryValue === undefined) {
             boundaryValue = ranking.highlight || ranking.highlightLowest
@@ -785,7 +837,10 @@ function updateRankingsPanel(hourStr) {
                 const unitSpacing = ranking.unit === '°C' ? '' : ' ';
                 const elevation = entry.elevation === null ? '—' : formatValue(entry.elevation, 0);
                 const temperatureClass = ranking.unit === '°C' ? ' ranking-value-temperature' : '';
-                return `<tr><td class="ranking-value${temperatureClass}${highlightClass}">${formatValue(entry[ranking.key], 1)}${unitSpacing}${ranking.unit}</td><td class="ranking-station${highlightClass}">${escapeHtml(entry.station)}</td><td class="ranking-elevation${highlightClass}">${elevation}</td></tr>`;
+                const rowHighlightColor = ranking.unit === '°C'
+                    ? getTemperatureStyle(entry[ranking.key]).bg
+                    : getLabelScaleColor(entry[ranking.key], ranking.unit === 'mm' ? precipLabelScale : windLabelScale);
+                return `<tr data-station-id="${escapeHtml(entry.stationId)}" data-highlight-color="${escapeHtml(rowHighlightColor)}"><td class="ranking-value${temperatureClass}${highlightClass}">${formatValue(entry[ranking.key], 1)}${unitSpacing}${ranking.unit}</td><td class="ranking-station${highlightClass}">${escapeHtml(entry.station)}</td><td class="ranking-elevation${highlightClass}">${elevation}</td></tr>`;
             }).join('')
             : '<tr><td class="ranking-empty" colspan="3">Brak danych</td></tr>';
     });
