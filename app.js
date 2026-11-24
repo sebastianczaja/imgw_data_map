@@ -171,6 +171,13 @@ const rankingParameterDefinitions = [
     { key: 'Wind_max', shortName: 'Wind_max', unit: 'km/h', category: 'wind' }
 ];
 
+const stationChartParameters = [
+    { key: 'Ta', label: 'Temperatura aktualna (Ta)', unit: '°C', hourlyKey: 'Ta', yMin: -40, yMax: 40, color: '#d35400' },
+    { key: 'Precip_hour', label: 'Opad godzinowy (Precip_hour)', unit: 'mm', hourlyKey: 'Precip', yMin: 0, yMax: 30, color: '#2878b5' },
+    { key: 'Wind_avg', label: 'Średnia prędkość wiatru (Wind_avg)', unit: 'km/h', hourlyKey: 'Wind_avg', convertWindSpeed: true, yMin: 0, yMax: 200, color: '#7754a5' },
+    { key: 'Wind_max', label: 'Maksymalny poryw wiatru (Wind_max)', unit: 'km/h', hourlyKey: 'Wind_max', convertWindSpeed: true, yMin: 0, yMax: 200, color: '#b3397a' }
+];
+
 let activeTempParam = 'Ta';
 let rankingParameterOverride = null;
 let currentHourStr = '12';
@@ -178,29 +185,65 @@ let currentHourStr = '12';
 etykietyTa.addTo(map);
 
 let globalGeoJsonData = null;
-let latestAvailableHourByParameter = { Ta: 23, Precip: 23 };
+let meteorologicalDate = '';
+let meteorologicalHourlySlots = [];
+let previousDayStations = new Map();
+let dateLoadRequest = 0;
 
-function hasCompleteHourlyData(feature, parameterKey, latestAvailableHour) {
-    const hourly = feature && feature.properties ? feature.properties.Hourly : null;
-    if (!hourly || typeof hourly !== 'object') return false;
+function getMeteorologicalHourlySlots(dateStr) {
+    const end = Date.parse(`${dateStr}T06:00:00Z`);
+    const formatter = new Intl.DateTimeFormat('en-CA', {
+        timeZone: 'Europe/Warsaw', year: 'numeric', month: '2-digit',
+        day: '2-digit', hour: '2-digit', hourCycle: 'h23'
+    });
+    const slots = Array.from({ length: 25 }, (_, index) => {
+        const instant = new Date(end - (24 - index) * 3600000);
+        const parts = Object.fromEntries(
+            formatter.formatToParts(instant)
+                .filter(part => part.type !== 'literal')
+                .map(part => [part.type, part.value])
+        );
+        return { date: `${parts.year}-${parts.month}-${parts.day}`, hour: parts.hour, utc: instant.toISOString().replace('.000Z', 'Z') };
+    });
+    const counts = new Map();
+    slots.forEach(slot => {
+        const key = `${slot.date} ${slot.hour}`;
+        counts.set(key, (counts.get(key) || 0) + 1);
+    });
+    slots.forEach(slot => { slot.repeated = counts.get(`${slot.date} ${slot.hour}`) > 1; });
+    return slots;
+}
 
-    return Array.from({ length: latestAvailableHour + 1 }, (_, hour) => String(hour).padStart(2, '0'))
-        .every(hourKey => {
-            const value = hourly[hourKey]?.[parameterKey];
-            return value !== undefined && value !== null && value !== ''
-                && Number.isFinite(Number(value));
-        });
+function getMeteorologicalHourlyValue(feature, slot, parameterKey) {
+    const properties = feature?.properties;
+    const station = slot.date === meteorologicalDate
+        ? properties
+        : previousDayStations.get(String(properties?.Station_id));
+    const hour = station?.Hourly?.[slot.hour];
+    return slot.repeated ? hour?.UTC?.[slot.utc]?.[parameterKey] : hour?.[parameterKey];
+}
+
+function hasMeteorologicalHourlyValue(feature, slot, parameterKey) {
+    const value = getMeteorologicalHourlyValue(feature, slot, parameterKey);
+    return value !== undefined && value !== null && value !== ''
+        && Number.isFinite(Number(value));
+}
+
+function hasCompleteHourlyData(feature, parameterKey) {
+    return meteorologicalHourlySlots.length === 25
+        && meteorologicalHourlySlots.every(slot => hasMeteorologicalHourlyValue(feature, slot, parameterKey));
+}
+
+function hasAnyMeteorologicalHourlyData(feature, parameterKey) {
+    return meteorologicalHourlySlots.some(slot => hasMeteorologicalHourlyValue(feature, slot, parameterKey));
 }
 
 function getMarkerStyle(feature, parameterKey) {
     const completenessParameter = ['Ta', 'Tmin_hour', 'Tmax_hour'].includes(parameterKey)
         ? 'Ta'
-        : parameterKey === 'Precip' ? 'Precip' : null;
-    const latestAvailableHour = completenessParameter
-        ? latestAvailableHourByParameter[completenessParameter]
-        : -1;
+        : ['Precip', 'Wind_avg', 'Wind_max'].includes(parameterKey) ? parameterKey : null;
     const hasIncompleteHourlyData = completenessParameter !== null
-        && !hasCompleteHourlyData(feature, completenessParameter, latestAvailableHour);
+        && !hasCompleteHourlyData(feature, completenessParameter);
 
     return {
         radius: 3,
@@ -292,12 +335,53 @@ function getTemperatureStyle(temp) {
     return { bg: `rgba(${Math.round(lower.r + fraction * (upper.r - lower.r))}, ${Math.round(lower.g + fraction * (upper.g - lower.g))}, ${Math.round(lower.b + fraction * (upper.b - lower.b))}, 0.98)` };
 }
 
-function addDataToParamGroup(rawValue, suffix, className, positionClass, latlng, popupContent, feature, group, isElevation = false, extremeType = '', parameterKey = '') {
+function keepPopupWithinMap(popup) {
+    const element = popup.getElement();
+    if (!element) return;
+
+    const mapBounds = map.getContainer().getBoundingClientRect();
+    const popupBounds = element.getBoundingClientRect();
+    const padding = 8;
+    let offsetX = 0;
+    let offsetY = 0;
+
+    if (popupBounds.left < mapBounds.left + padding) {
+        offsetX = mapBounds.left + padding - popupBounds.left;
+    } else if (popupBounds.right > mapBounds.right - padding) {
+        offsetX = mapBounds.right - padding - popupBounds.right;
+    }
+    if (popupBounds.top < mapBounds.top + padding) {
+        offsetY = mapBounds.top + padding - popupBounds.top;
+    } else if (popupBounds.bottom > mapBounds.bottom - padding) {
+        offsetY = mapBounds.bottom - padding - popupBounds.bottom;
+    }
+
+    if (offsetX || offsetY) {
+        const position = L.DomUtil.getPosition(element);
+        L.DomUtil.setPosition(element, position.add(L.point(offsetX, offsetY)));
+    }
+}
+
+function addDataToParamGroup(rawValue, suffix, className, positionClass, latlng, popupContent, feature, group, isElevation = false, extremeType = '', parameterKey = '', missingCurrentValue = false) {
     const decimals = isElevation ? 0 : 1;
-    const formatted = formatValue(rawValue, decimals);
+    const formatted = missingCurrentValue ? 'b.d.' : formatValue(rawValue, decimals);
     if (formatted !== null) {
-        const marker = L.circleMarker(latlng, getMarkerStyle(feature, parameterKey));
-        marker.bindPopup(popupContent);
+        const markerStyle = getMarkerStyle(feature, parameterKey);
+        if (missingCurrentValue) markerStyle.fillColor = '#e74c3c';
+        const marker = L.circleMarker(latlng, markerStyle);
+        marker.bindPopup(popupContent, {
+            autoPan: false,
+            maxWidth: Math.min(520, Math.max(160, map.getSize().x - 24)),
+            maxHeight: Math.min(320, Math.max(120, map.getSize().y - 24)),
+            className: 'station-info-popup'
+        });
+        marker.on('popupopen', event => {
+            const chartButton = event.popup.getElement()?.querySelector('[data-show-station-charts]');
+            if (chartButton) {
+                chartButton.onclick = () => openStationCharts(feature.properties);
+            }
+            requestAnimationFrame(() => keepPopupWithinMap(event.popup));
+        });
         const direction = positionClass === 'etykieta-dol' ? 'bottom' : 'top';
 
         let extraClass = '';
@@ -313,12 +397,12 @@ function addDataToParamGroup(rawValue, suffix, className, positionClass, latlng,
         let stationHighlightColor = null;
         if (isTemperatureLayer || isPrecipitationLayer || isWindLayer) {
             let borderStyle = '1px solid #666';
-            const labelColor = isTemperatureLayer
+            const labelColor = missingCurrentValue ? '#b0b0b0' : isTemperatureLayer
                 ? getTemperatureStyle(rawValue).bg
                 : getLabelScaleColor(rawValue, isPrecipitationLayer ? precipLabelScale : windLabelScale);
             stationHighlightColor = labelColor;
             const textColor = '#000000';
-            tooltipContent = `<div style="background: ${labelColor} !important; color: ${textColor} !important; text-shadow: none; border: ${borderStyle} !important; box-sizing: content-box !important; width: 100%; height: 100%; display: inline-flex; align-items: center; justify-content: center; margin: -1px -2px; padding: 0 2px; border-radius: 2px;">${formatted}${suffix}</div>`;
+            tooltipContent = `<div style="background: ${labelColor} !important; color: ${textColor} !important; text-shadow: none; border: ${borderStyle} !important; box-sizing: content-box !important; width: 100%; height: 100%; display: inline-flex; align-items: center; justify-content: center; margin: -1px -2px; padding: 0 2px; border-radius: 2px;">${formatted}${missingCurrentValue ? '' : suffix}</div>`;
         } else {
             tooltipContent = `${formatted}${suffix}`;
         }
@@ -446,7 +530,7 @@ function getLastAvailableHourFromData(data, parameterKey = 'Ta') {
                 if (hourValue[parameterKey] !== undefined && hourValue[parameterKey] !== null && hourValue[parameterKey] !== '') {
                     maxParameterHour = Math.max(maxParameterHour, hourNum);
                 }
-                const hasMeasurement = Object.keys(hourValue).some(key => hourValue[key] !== undefined && hourValue[key] !== null && hourValue[key] !== '');
+                const hasMeasurement = Object.keys(hourValue).some(key => key !== 'UTC' && hourValue[key] !== undefined && hourValue[key] !== null && hourValue[key] !== '');
                 if (hasMeasurement) maxAnyHour = Math.max(maxAnyHour, hourNum);
             }
         });
@@ -457,12 +541,15 @@ function getLastAvailableHourFromData(data, parameterKey = 'Ta') {
     return 23;
 }
 
-function processData(data, selectedHour) {
+function processData(data, selectedHour, dateStr, previousData) {
     globalGeoJsonData = data;
-    latestAvailableHourByParameter = {
-        Ta: getLastAvailableHourFromData(data, 'Ta'),
-        Precip: getLastAvailableHourFromData(data, 'Precip')
-    };
+    meteorologicalDate = dateStr;
+    meteorologicalHourlySlots = getMeteorologicalHourlySlots(dateStr);
+    previousDayStations = new Map(
+        (previousData?.features || [])
+            .filter(feature => feature?.properties?.Station_id != null)
+            .map(feature => [String(feature.properties.Station_id), feature.properties])
+    );
     const hourSlider = document.getElementById('hourSlider');
     const hour = Number.isInteger(selectedHour) && selectedHour >= 0 && selectedHour <= 23
         ? selectedHour
@@ -476,6 +563,11 @@ function processData(data, selectedHour) {
         if (span) span.textContent = hourStr + ':00';
     }
     renderDataForHour(hourStr);
+}
+
+function formatStationPopupValue(label, value, unit) {
+    const formattedValue = value === null ? 'Brak danych' : `${value}${unit}`;
+    return `<p><strong>${label}:</strong> ${formattedValue}</p>`;
 }
 
 function renderDataForHour(hourStr) {
@@ -551,20 +643,23 @@ function renderDataForHour(hourStr) {
                   fElevation = formatValue(props.Elevation, 0);
 
             let popupContent = `<h3>${props.Station_name || 'Stacja pomiarowa'}</h3><hr><p><strong>ID:</strong> ${props.Station_id}</p><p><strong>Status:</strong> <span style="color:#2ecc71; font-weight:bold;">Aktywna</span></p>`;
-            if (fElevation !== null) popupContent += `<p><strong>Wysokość:</strong> ${fElevation} m n.p.m.</p>`;
-            if (fTa !== null) popupContent += `<p><strong>Temperatura (${hourStr}:00):</strong> ${fTa}°C</p>`;
-            if (hourlyPrecip !== null) popupContent += `<p><strong>Opad (${hourStr}:00):</strong> ${formatValue(hourlyPrecip, 1)} mm</p>`;
-            if (fTminHour !== null) popupContent += `<p><strong>Tmin godzinowe:</strong> ${fTminHour}°C</p>`;
-            if (fTmaxHour !== null) popupContent += `<p><strong>Tmax godzinowe:</strong> ${fTmaxHour}°C</p>`;
-            if (fTmin !== null) popupContent += `<p><strong>Tmin (dobowe):</strong> ${fTmin}°C</p>`;
-            if (fTmax !== null) popupContent += `<p><strong>Tmax (dobowe):</strong> ${fTmax}°C</p>`;
-            if (fTg !== null) {
-                const tgTime = props.Tg_time ? `, pomiar ${escapeHtml(props.Tg_time)}` : '';
-                popupContent += `<p><strong>Temperatura przy gruncie${tgTime}:</strong> ${fTg}°C</p>`;
-            }
-            if (fPrecip24h !== null) popupContent += `<p><strong>Opad dobowy (24h):</strong> ${fPrecip24h} mm</p>`;
-            if (fWindAvg !== null) popupContent += `<p><strong>Średnia prędkość wiatru (${hourStr}:00):</strong> ${fWindAvg} km/h</p>`;
-            if (fWindMax !== null) popupContent += `<p><strong>Maksymalny poryw w dobie meteorologicznej:</strong> ${fWindMax} km/h</p>`;
+            popupContent += formatStationPopupValue('Wysokość', fElevation, ' m n.p.m.');
+            popupContent += formatStationPopupValue('Temperatura aktualna', fTa, '°C');
+            popupContent += formatStationPopupValue(`Opad godzinowy (${hourStr}:00)`, fPrecip10min, ' mm');
+            popupContent += formatStationPopupValue('Tmin godzinowe', fTminHour, '°C');
+            popupContent += formatStationPopupValue('Tmax godzinowe', fTmaxHour, '°C');
+            popupContent += formatStationPopupValue('Tmin dobowe', fTmin, '°C');
+            popupContent += formatStationPopupValue('Tmax dobowe', fTmax, '°C');
+            const formattedTgTime = fTg !== null ? formatStationPopupTime(props.Tg_time) : '';
+            const tgTime = formattedTgTime ? ` (${formattedTgTime})` : '';
+            popupContent += formatStationPopupValue(`Temperatura przy gruncie${tgTime}`, fTg, '°C');
+            popupContent += formatStationPopupValue('Suma opadów', fPrecip24h, ' mm');
+            popupContent += formatStationPopupValue(`Średnia prędkość wiatru (${hourStr}:00)`, fWindAvg, ' km/h');
+            popupContent += formatStationPopupValue('Maksymalny poryw wiatru', fWindMax, ' km/h');
+            popupContent += `<hr><p class="station-chart-action"><button type="button" class="station-chart-button" data-show-station-charts aria-label="Pokaż wykresy" title="Pokaż wykresy">
+                <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2 13.5h12M3.5 11V8.5M7 11V5M10.5 11V7M14 11V3.5" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+                <span>Pokaż wykresy</span>
+            </button></p>`;
 
             const getEx = (val, field) => {
                 const roundedValue = getRoundedNumericValue(val);
@@ -575,13 +670,15 @@ function renderDataForHour(hourStr) {
                 return '';
             };
 
-            if (hourlyTa !== null) {
+            if (getRoundedNumericValue(hourlyTa) !== null) {
                 addDataToParamGroup(hourlyTa, '°C', 'temp-aktualna', 'etykieta-gora', latlng, popupContent, feature, etykietyTa, false, getEx(hourlyTa, 'Ta'), 'Ta');
+            } else if (hasAnyMeteorologicalHourlyData(feature, 'Ta')) {
+                addDataToParamGroup(null, '', 'temp-aktualna', 'etykieta-gora', latlng, popupContent, feature, etykietyTa, false, '', 'Ta', true);
             }
             addDataToParamGroup(props.Tmin, '°C', 'temp-min', 'etykieta-dol', latlng, popupContent, feature, etykietyTmin, false, getEx(props.Tmin, 'Tmin'));
-            addDataToParamGroup(props.Tmin_hour, '°C', 'temp-min-hour', 'etykieta-dol', latlng, popupContent, feature, etykietyTminHour, false, getEx(props.Tmin_hour, 'Tmin_hour'));
+            addDataToParamGroup(props.Tmin_hour, '°C', 'temp-min-hour', 'etykieta-dol', latlng, popupContent, feature, etykietyTminHour, false, getEx(props.Tmin_hour, 'Tmin_hour'), 'Tmin_hour');
             addDataToParamGroup(props.Tmax, '°C', 'temp-max', 'etykieta-gora', latlng, popupContent, feature, etykietyTmax, false, getEx(props.Tmax, 'Tmax'));
-            addDataToParamGroup(props.Tmax_hour, '°C', 'temp-max-hour', 'etykieta-gora', latlng, popupContent, feature, etykietyTmaxHour, false, getEx(props.Tmax_hour, 'Tmax_hour'));
+            addDataToParamGroup(props.Tmax_hour, '°C', 'temp-max-hour', 'etykieta-gora', latlng, popupContent, feature, etykietyTmaxHour, false, getEx(props.Tmax_hour, 'Tmax_hour'), 'Tmax_hour');
             addDataToParamGroup(groundTemp, '°C', 'temp-grunt', 'etykieta-gora', latlng, popupContent, feature, etykietyTg, false, getEx(groundTemp, 'Tg'));
             addDataToParamGroup(props.Precip_24h, ' mm', 'opad-dobowy', 'etykieta-gora', latlng, popupContent, feature, etykietyOpady24h, false, getEx(props.Precip_24h, 'Precip_24h'));
             
@@ -591,8 +688,8 @@ function renderDataForHour(hourStr) {
                 addDataToParamGroup(props.Precip_10min, ' mm', 'opad-10min', 'etykieta-gora', latlng, popupContent, feature, etykietyOpady10min, false, getEx(props.Precip_10min, 'Precip_10min'), 'Precip');
             }
 
-            addDataToParamGroup(wAvgKmh, ' km/h', 'wiatr-avg', 'etykieta-gora', latlng, popupContent, feature, etykietyWindAvg, false, getEx(wAvgKmh, 'Wind_avg'));
-            addDataToParamGroup(wMaxKmh, ' km/h', 'wiatr-max', 'etykieta-gora', latlng, popupContent, feature, etykietyWindMax, false, getEx(wMaxKmh, 'Wind_max'));
+            addDataToParamGroup(wAvgKmh, ' km/h', 'wiatr-avg', 'etykieta-gora', latlng, popupContent, feature, etykietyWindAvg, false, getEx(wAvgKmh, 'Wind_avg'), 'Wind_avg');
+            addDataToParamGroup(wMaxKmh, ' km/h', 'wiatr-max', 'etykieta-gora', latlng, popupContent, feature, etykietyWindMax, false, getEx(wMaxKmh, 'Wind_max'), 'Wind_max');
             addDataToParamGroup(props.Elevation, ' m n.p.m.', 'wysokosc', 'etykieta-gora', latlng, popupContent, feature, etykietyElevation, true, '');
             addDataToParamGroup(props.Station_name, '', 'nazwa-stacji', 'etykieta-gora', latlng, popupContent, feature, etykietyStationName, false, '');
             
@@ -615,6 +712,208 @@ function escapeHtml(value) {
     return String(value ?? '').replace(/[&<>'"]/g, character => ({
         '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;'
     }[character]));
+}
+
+function getStationChartTimestampHour(timestamp) {
+    if (typeof timestamp !== 'string' || !timestamp) return null;
+    const date = new Date(timestamp.includes('T') ? timestamp : timestamp.replace(' ', 'T'));
+    if (Number.isNaN(date.getTime())) return null;
+    return date.getHours() + date.getMinutes() / 60;
+}
+
+function formatStationPopupTime(timestamp) {
+    const hour = getStationChartTimestampHour(timestamp);
+    return hour === null ? '' : formatStationChartHour(hour);
+}
+
+function getStationChartData(properties, parameter) {
+    const hourly = properties.Hourly;
+    const points = Object.entries(hourly && typeof hourly === 'object' ? hourly : {})
+        .map(([hourKey, values]) => {
+            const hour = Number(hourKey);
+            const rawValue = getRoundedNumericValue(values?.[parameter.hourlyKey]);
+            if (!Number.isInteger(hour) || hour < 0 || hour > 23 || rawValue === null) return null;
+            const value = parameter.convertWindSpeed
+                ? convertMetersPerSecondToKilometersPerHour(rawValue)
+                : rawValue;
+            return { hour, value: getRoundedNumericValue(value) };
+        })
+        .filter(point => point && point.value !== null)
+        .sort((first, second) => first.hour - second.hour);
+    return { points };
+}
+
+function formatStationChartHour(hour) {
+    const totalMinutes = Math.round(hour * 60);
+    const hourPart = Math.floor(totalMinutes / 60) % 24;
+    const minutePart = totalMinutes % 60;
+    return `${String(hourPart).padStart(2, '0')}:${String(minutePart).padStart(2, '0')}`;
+}
+
+function renderStationChart(series) {
+    if (!series.length) return '';
+
+    const width = 900;
+    const height = 540;
+    const left = 55;
+    const right = 20;
+    const top = 60;
+    const bottom = 34;
+    const plotWidth = width - left - right;
+    const plotHeight = height - top - bottom;
+    const xForHour = hour => left + (hour / 23) * plotWidth;
+    const yForValue = (value, parameter) => {
+        const clampedValue = Math.min(parameter.yMax, Math.max(parameter.yMin, value));
+        return top + ((parameter.yMax - clampedValue) / (parameter.yMax - parameter.yMin)) * plotHeight;
+    };
+    const xTicks = Array.from({ length: 24 }, (_, hour) => hour);
+    const hourGrid = xTicks.map(hour => {
+        const x = xForHour(hour);
+        return `<line x1="${x}" y1="${top}" x2="${x}" y2="${top + plotHeight}" class="station-chart-hour-gridline"/>`;
+    }).join('');
+    const xLabels = xTicks.map(hour => {
+        const x = xForHour(hour);
+        return `<text x="${x}" y="${height - 8}" class="station-chart-x-label" text-anchor="middle">${formatStationChartHour(hour)}</text>`;
+    }).join('');
+    const charts = [
+        { unit: '°C', title: 'Temperatura aktualna', labelStep: 5 },
+        { unit: 'mm', title: 'Opad godzinowy', labelStep: 5 },
+        { unit: 'km/h', title: 'Wiatr godzinowy', labelStep: 20 }
+    ].map(group => {
+        const groupSeries = series.filter(item => item.parameter.unit === group.unit);
+        if (!groupSeries.length) return '';
+        const axisParameter = groupSeries[0].parameter;
+        const ticks = [];
+        for (let value = axisParameter.yMin; value <= axisParameter.yMax; value += 5) ticks.push(value);
+        const grid = ticks.map(value => {
+            const y = yForValue(value, axisParameter);
+            return `<line x1="${left}" y1="${y}" x2="${width - right}" y2="${y}" class="station-chart-gridline"/>`;
+        }).join('');
+        const axisLabels = ticks.filter(value => value % group.labelStep === 0).map(value => {
+            const y = yForValue(value, axisParameter);
+            return `<text x="${left - 7}" y="${y + 4}" class="station-chart-y-label" text-anchor="end">${value.toFixed(1)}</text>`;
+        }).join('');
+        const labelPositions = new Map();
+        const plottedSeries = groupSeries.map(({ parameter, chartData }) => {
+            const points = chartData.points;
+            const segments = [];
+            points.forEach(point => {
+                let segment = segments[segments.length - 1];
+                if (!segment || point.hour - segment[segment.length - 1].hour > 1) {
+                    segment = [];
+                    segments.push(segment);
+                }
+                segment.push(point);
+            });
+            const lines = segments
+                .filter(segment => segment.length > 1)
+                .map(segment => `<polyline points="${segment.map(point => `${xForHour(point.hour)},${yForValue(point.value, parameter)}`).join(' ')}" class="station-chart-line" style="stroke:${parameter.color}"/>`)
+                .join('');
+            const markers = points.map(point => {
+                const x = xForHour(point.hour);
+                const y = yForValue(point.value, parameter);
+                const title = `${escapeHtml(parameter.label)} ${formatStationChartHour(point.hour)}: ${point.value.toFixed(1)} ${escapeHtml(parameter.unit)}`;
+                if (point.value > parameter.yMax) {
+                    return `<polygon points="${x},${y - 6} ${x - 5},${y + 4} ${x + 5},${y + 4}" class="station-chart-point station-chart-point-out-of-range" style="fill:${parameter.color}"><title>${title}</title></polygon>`;
+                }
+                if (point.value < parameter.yMin) {
+                    return `<polygon points="${x},${y + 6} ${x - 5},${y - 4} ${x + 5},${y - 4}" class="station-chart-point station-chart-point-out-of-range" style="fill:${parameter.color}"><title>${title}</title></polygon>`;
+                }
+                return `<circle cx="${x}" cy="${y}" r="3.5" class="station-chart-point" style="fill:${parameter.color}"><title>${title}</title></circle>`;
+            }).join('');
+            const labels = points.map(point => {
+                const x = xForHour(point.hour);
+                let labelY = yForValue(point.value, parameter) - 10;
+                const occupied = labelPositions.get(point.hour) || [];
+                while (occupied.some(position => Math.abs(position - labelY) < 13)) labelY -= 13;
+                occupied.push(labelY);
+                labelPositions.set(point.hour, occupied);
+                const anchor = point.hour === 0 ? 'start' : point.hour === 23 ? 'end' : 'middle';
+                return `<text x="${x}" y="${labelY}" class="station-chart-value-label" text-anchor="${anchor}" style="fill:${parameter.color}">${point.value.toFixed(1)}</text>`;
+            }).join('');
+            return { lines, markers, labels };
+        });
+        const title = `${group.title} [${group.unit}]`;
+        return `<section class="station-chart-group">
+            <div class="station-chart-title"><strong>${escapeHtml(title)}</strong></div>
+            <div class="station-chart-plot"><svg class="station-chart-svg" viewBox="0 0 ${width} ${height}" role="img" aria-label="${escapeHtml(title)}">
+                ${hourGrid}${grid}${axisLabels}
+                <line x1="${left}" y1="${top + plotHeight}" x2="${width - right}" y2="${top + plotHeight}" class="station-chart-axis"/>
+                ${plottedSeries.map(item => item.lines).join('')}
+                ${plottedSeries.map(item => item.markers).join('')}
+                ${plottedSeries.map(item => item.labels).join('')}${xLabels}
+            </svg></div>
+        </section>`;
+    }).join('');
+    const tableSeries = series.map(({ parameter, chartData }) => ({
+        parameter,
+        valuesByHour: new Map(chartData.points.map(point => [point.hour, point.value]))
+    }));
+    const tableHeaders = tableSeries.map(({ parameter }) =>
+        `<th scope="col" title="${escapeHtml(parameter.label)}"><span class="station-chart-legend-dot" style="background:${parameter.color}"></span>${escapeHtml(parameter.key)}</th>`
+    ).join('');
+    const tableRows = xTicks.map(hour => {
+        const cells = tableSeries.map(({ parameter, valuesByHour }) => {
+            const value = valuesByHour.get(hour);
+            return `<td>${value === undefined ? 'Brak danych' : `${value.toFixed(1)} ${escapeHtml(parameter.unit)}`}</td>`;
+        }).join('');
+        return `<tr><th scope="row">${formatStationChartHour(hour)}</th>${cells}</tr>`;
+    }).join('');
+
+    return `<article class="station-chart-card">
+        ${charts}
+        <div class="station-chart-table-wrap">
+            <table class="station-chart-table" aria-label="Wartości godzinowe">
+                <thead><tr><th scope="col">Godzina</th>${tableHeaders}</tr></thead>
+                <tbody>${tableRows}</tbody>
+            </table>
+        </div>
+    </article>`;
+}
+
+function openStationCharts(properties) {
+    const dialog = document.getElementById('stationChartsDialog');
+    const parameterList = document.getElementById('stationChartParameters');
+    const chartContainer = document.getElementById('stationChartsContent');
+    if (!dialog || !parameterList || !chartContainer) return;
+
+    const selectedDate = document.getElementById('datePicker')?.value || '';
+    document.getElementById('stationChartsTitle').textContent = properties.Station_name || properties.Station_id || 'Stacja';
+    document.getElementById('stationChartsDate').textContent = selectedDate
+        ? `Data: ${selectedDate} · czas lokalny`
+        : 'Czas lokalny';
+
+    parameterList.innerHTML = stationChartParameters.map(parameter => {
+        const hasData = getStationChartData(properties, parameter).points.length > 0;
+        return `<label><input type="checkbox" data-chart-parameter="${parameter.key}"${hasData ? ' checked' : ''}${hasData ? '' : ' disabled'}><span class="station-chart-legend-dot" style="background:${parameter.color}"></span>${escapeHtml(parameter.label)}</label>`;
+    }).join('');
+
+    const renderSelectedCharts = () => {
+        const selectedParameters = new Set(
+            [...parameterList.querySelectorAll('[data-chart-parameter]:checked')]
+                .map(checkbox => checkbox.dataset.chartParameter)
+        );
+        const series = stationChartParameters
+            .filter(parameter => selectedParameters.has(parameter.key))
+            .map(parameter => ({ parameter, chartData: getStationChartData(properties, parameter) }))
+            .filter(item => item.chartData.points.length);
+        chartContainer.innerHTML = renderStationChart(series) || '<p class="station-charts-empty">Zaznacz zmienną, aby wyświetlić wykres.</p>';
+    };
+    parameterList.querySelectorAll('[data-chart-parameter]').forEach(checkbox => {
+        checkbox.addEventListener('change', renderSelectedCharts);
+    });
+    renderSelectedCharts();
+    if (!dialog.open) dialog.showModal();
+}
+
+function initStationChartsDialog() {
+    const dialog = document.getElementById('stationChartsDialog');
+    const closeButton = document.getElementById('stationChartsClose');
+    if (!dialog || !closeButton) return;
+    closeButton.addEventListener('click', () => dialog.close());
+    dialog.addEventListener('click', event => {
+        if (event.target === dialog) dialog.close();
+    });
 }
 
 function buildRankingsControl() {
@@ -929,24 +1228,55 @@ function showNoDataState(dateStr) {
 }
 
 function loadDataForDate(dateStr, selectedHour) {
+    const request = ++dateLoadRequest;
     clearMapData();
     if (!dateStr) return;
     const path = `imgw_data/${dateStr}.geojson`;
-    fetch(`${path}?t=${Date.now()}`, { cache: 'no-store' })
-        .then(r => {
-            if (!r.ok) throw new Error('no file');
-            return r.json();
-        })
-        .then(j => {
-            globalGeoJsonData = j;
-            processData(j, selectedHour);
+    const previousDate = new Date(Date.parse(`${dateStr}T00:00:00Z`) - 86400000).toISOString().slice(0, 10);
+    const previousPath = `imgw_data/${previousDate}.geojson`;
+    const fetchData = filePath => fetch(`${filePath}?t=${Date.now()}`, { cache: 'no-store' })
+        .then(response => {
+            if (!response.ok) throw new Error(`HTTP ${response.status}`);
+            return response.json();
+        });
+    const previousData = fetchData(previousPath)
+        .then(data => ({ data, error: null }))
+        .catch(error => ({ data: null, error }));
+    Promise.all([fetchData(path), previousData])
+        .then(([data, previous]) => {
+            if (request !== dateLoadRequest) return;
+            if (previous.error) console.warn('Nie udało się wczytać danych poprzedniego dnia:', previousPath, previous.error);
+            processData(data, selectedHour, dateStr, previous.data);
             const currentTimeLabel = document.getElementById('currentTimeLabel');
             const span = currentTimeLabel ? currentTimeLabel.querySelector('span') : null;
             if (span) span.style.color = '#2ecc71';
             const datePicker = document.getElementById('datePicker');
-            if (datePicker) datePicker.setCustomValidity('');
+            if (datePicker) {
+                datePicker.setCustomValidity('');
+                const warnings = [];
+                if (previous.error) {
+                    warnings.push(`Nie udało się wczytać danych z ${previousDate}; kompletność doby jest niepotwierdzona.`);
+                }
+                const repeatedSlots = meteorologicalHourlySlots.filter(slot => slot.repeated);
+                if (repeatedSlots.length && data.features.some(feature => {
+                    if (feature?.properties?.Status !== 'ACTIVE') return false;
+                    if (!Object.values(feature.properties.Hourly || {}).some(hour =>
+                        ['Ta', 'Precip', 'Wind_avg', 'Wind_max'].some(key => hour?.[key] != null)
+                    )) return false;
+                    return repeatedSlots.some(slot => {
+                        const properties = slot.date === meteorologicalDate
+                            ? feature.properties
+                            : previousDayStations.get(String(feature.properties.Station_id));
+                        return !properties?.Hourly?.[slot.hour]?.UTC?.[slot.utc];
+                    });
+                })) {
+                    warnings.push('Dla części stacji nie ma danych UTC do sprawdzenia powtórzonej godziny.');
+                }
+                datePicker.title = warnings.join(' ');
+            }
         })
         .catch(err => {
+            if (request !== dateLoadRequest) return;
             console.error('Could not load', path, err);
             showNoDataState(dateStr);
         });
@@ -1296,10 +1626,12 @@ function initThemeToggle() {
 
 function initTimelineUI() {
     const datePicker = document.getElementById('datePicker');
+    const datePickerDisplay = document.getElementById('datePickerDisplay');
     const hourSlider = document.getElementById('hourSlider');
     const ticksContainer = document.getElementById('ticksContainer');
     const currentTimeLabel = document.getElementById('currentTimeLabel');
     let availableDates = [];
+    initStationChartsDialog();
     initThemeToggle();
 
     if (ticksContainer) {
@@ -1315,6 +1647,18 @@ function initTimelineUI() {
     function updateTimeLabel(val) {
         const span = currentTimeLabel ? currentTimeLabel.querySelector('span') : null;
         if (span) span.textContent = (val < 10 ? '0' + val : val) + ':00';
+    }
+
+    function updateDatePickerDisplay() {
+        if (!datePicker || !datePickerDisplay) return;
+        const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(datePicker.value);
+        datePickerDisplay.textContent = match ? `${match[3]}.${match[2]}.${match[1]}` : '';
+    }
+
+    function setDatePickerValue(value) {
+        if (!datePicker) return;
+        datePicker.value = value;
+        updateDatePickerDisplay();
     }
 
     const now = new Date();
@@ -1340,7 +1684,7 @@ function initTimelineUI() {
                     const currentDateIndex = availableDates.indexOf(datePicker.value);
                     const previousDate = availableDates[currentDateIndex + 1];
                     if (previousDate) {
-                        datePicker.value = previousDate;
+                        setDatePickerValue(previousDate);
                         loadDataForDate(previousDate, 23);
                     }
                     return;
@@ -1355,7 +1699,7 @@ function initTimelineUI() {
                     const currentDateIndex = availableDates.indexOf(datePicker.value);
                     const nextDate = availableDates[currentDateIndex - 1];
                     if (nextDate) {
-                        datePicker.value = nextDate;
+                        setDatePickerValue(nextDate);
                         loadDataForDate(nextDate, 0);
                     }
                     return;
@@ -1374,7 +1718,7 @@ function initTimelineUI() {
                     String(selectedDate.getMonth() + 1).padStart(2, '0'),
                     String(selectedDate.getDate()).padStart(2, '0')
                 ].join('-');
-                datePicker.value = nextDate;
+                setDatePickerValue(nextDate);
                 datePicker.dispatchEvent(new Event('change'));
             }
         });
@@ -1384,7 +1728,7 @@ function initTimelineUI() {
     buildRankingsControl();
 
     if (datePicker) {
-        datePicker.value = todayStr;
+        setDatePickerValue(todayStr);
 
         fetch(`imgw_data/dates.json?t=${Date.now()}`, { cache: 'no-store' })
             .then(r => (r.ok ? r.json() : null))
@@ -1392,15 +1736,16 @@ function initTimelineUI() {
                 if (Array.isArray(dates)) {
                     availableDates = dates;
                 }
-                datePicker.value = todayStr;
+                setDatePickerValue(todayStr);
                 loadDataForDate(todayStr);
             })
             .catch(() => {
-                datePicker.value = todayStr;
+                setDatePickerValue(todayStr);
                 loadDataForDate(todayStr);
             });
 
         datePicker.addEventListener('change', () => {
+            updateDatePickerDisplay();
             const selectedHour = hourSlider ? Number(hourSlider.value) : undefined;
             loadDataForDate(datePicker.value, selectedHour);
         });

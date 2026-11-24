@@ -11,6 +11,7 @@ import requests
 import ast
 import zoneinfo
 import os
+from hourly_utc import build_repeated_hour_utc_readings, merge_utc_readings
 
 MAX_CONCURRENT_REQUESTS = 20
 REQUEST_TIMEOUT_SECONDS = 15
@@ -453,6 +454,8 @@ def build_hourly_data(temperature_data, target_date):
                 hourly_data[f"{measured_at.hour:02d}"][parameter_key] = reading["value"]
 
     fill_hourly_wind(temperature_data, hourly_data, target_date)
+    for hour, readings in build_repeated_hour_utc_readings(temperature_data, target_date).items():
+        hourly_data[hour]["UTC"] = readings
     return hourly_data
 
 def has_hourly_readings(hourly_data):
@@ -475,6 +478,9 @@ def add_missing_hourly_readings(document, readings_by_station):
             if not isinstance(hour, dict):
                 continue
             for parameter_key, value in parameters.items():
+                if parameter_key == "UTC":
+                    additions += merge_utc_readings(hour, value)
+                    continue
                 if hour.get(parameter_key) is None or hour.get(parameter_key) == "":
                     hour[parameter_key] = value
                     additions += 1

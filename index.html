@@ -126,6 +126,282 @@
             display: none !important;
         }
 
+        .station-info-popup .leaflet-popup-content-wrapper {
+            border-radius: 6px;
+        }
+        .station-info-popup .leaflet-popup-content {
+            margin: 6px 10px;
+            font-size: 11px;
+            line-height: 1.15;
+            white-space: nowrap;
+            overflow-x: auto;
+        }
+        .station-info-popup .leaflet-popup-content h3 {
+            margin: 2px 0 4px;
+            font-size: 12px;
+            line-height: 1.2;
+        }
+        .station-info-popup .leaflet-popup-content hr {
+            display: block;
+            height: 0;
+            margin: 4px 0;
+            border: 0;
+            border-top: 1px solid rgba(128, 128, 128, 0.6);
+        }
+        .station-info-popup .leaflet-popup-content p {
+            margin: 2px 0;
+        }
+        .station-chart-action {
+            text-align: left;
+        }
+        .station-chart-button {
+            display: inline-flex;
+            align-items: center;
+            gap: 5px;
+            padding: 4px 7px;
+            border: 1px solid var(--input-border);
+            border-radius: 4px;
+            background: var(--input-bg);
+            color: var(--text-main);
+            font: inherit;
+            cursor: pointer;
+        }
+        .station-chart-button svg {
+            width: 14px;
+            height: 14px;
+            flex: 0 0 auto;
+        }
+        #stationChartsDialog {
+            width: min(940px, calc(100vw - 20px));
+            max-width: 940px;
+            max-height: 88vh;
+            padding: 0;
+            border: 1px solid var(--panel-border);
+            border-radius: 10px;
+            background: var(--panel-bg-strong);
+            color: var(--text-main);
+            box-shadow: 0 12px 40px rgba(0, 0, 0, 0.3);
+        }
+        #stationChartsDialog::backdrop {
+            background: rgba(15, 23, 42, 0.48);
+        }
+        .station-charts-shell {
+            display: flex;
+            flex-direction: column;
+            max-height: 88vh;
+            min-height: 0;
+        }
+        .station-charts-header {
+            display: flex;
+            align-items: flex-start;
+            justify-content: space-between;
+            gap: 12px;
+            padding: 12px 14px 8px;
+            border-bottom: 1px solid var(--panel-border);
+        }
+        .station-charts-header h2 {
+            margin: 0;
+            font-size: 16px;
+        }
+        .station-charts-header p {
+            margin: 3px 0 0;
+            color: var(--text-muted);
+            font-size: 11px;
+        }
+        .station-charts-close {
+            width: 28px;
+            height: 28px;
+            border: 1px solid var(--input-border);
+            border-radius: 5px;
+            background: var(--input-bg);
+            color: var(--text-main);
+            font-size: 18px;
+            line-height: 1;
+            cursor: pointer;
+        }
+        .station-charts-workspace {
+            display: grid;
+            grid-template-columns: minmax(160px, 190px) minmax(0, 1fr);
+            gap: 10px;
+            flex: 1;
+            min-height: 0;
+            padding: 8px 12px 12px;
+            overflow: hidden;
+        }
+        .station-chart-parameters {
+            display: flex;
+            flex-direction: column;
+            min-width: 0;
+            min-height: 0;
+            margin: 0;
+            padding: 6px 8px 8px;
+            border: 1px solid var(--panel-border);
+            border-radius: 6px;
+        }
+        .station-chart-parameters legend {
+            padding: 0 4px;
+            font-size: 11px;
+            font-weight: 700;
+        }
+        .station-chart-parameter-list {
+            display: grid;
+            grid-template-columns: minmax(0, 1fr);
+            align-content: start;
+            gap: 5px 12px;
+            min-height: 0;
+            flex: 1;
+            overflow-y: auto;
+        }
+        .station-chart-parameter-list label {
+            display: flex;
+            align-items: flex-start;
+            gap: 5px;
+            font-size: 11px;
+            line-height: 1.25;
+            cursor: pointer;
+        }
+        .station-chart-parameter-list input {
+            margin: 1px 0 0;
+        }
+        .station-chart-parameter-list .station-chart-legend-dot {
+            margin-top: 3px;
+        }
+        .station-charts-content {
+            display: grid;
+            grid-template-columns: minmax(0, 1fr);
+            align-content: start;
+            gap: 8px;
+            min-width: 0;
+            min-height: 0;
+            padding: 0 4px 0 0;
+            overflow-y: auto;
+        }
+        .station-chart-card {
+            min-width: 0;
+            padding: 8px;
+            border: 1px solid var(--panel-border);
+            border-radius: 6px;
+            background: var(--panel-bg);
+        }
+        .station-chart-title {
+            display: flex;
+            align-items: baseline;
+            justify-content: space-between;
+            gap: 8px;
+            font-size: 13px;
+        }
+        .station-chart-group + .station-chart-group {
+            margin-top: 12px;
+        }
+        .station-chart-plot {
+            overflow-x: auto;
+        }
+        .station-chart-svg {
+            display: block;
+            width: 100%;
+            min-width: 650px;
+            height: auto;
+            margin-top: 2px;
+        }
+        .station-chart-gridline {
+            stroke: var(--header-border, rgba(26, 37, 47, 0.14));
+            stroke-width: 1;
+        }
+        .station-chart-hour-gridline {
+            stroke: var(--header-border, rgba(26, 37, 47, 0.14));
+            stroke-width: 0.7;
+            opacity: 0.65;
+        }
+        .station-chart-axis {
+            stroke: var(--text-muted);
+            stroke-width: 1;
+        }
+        .station-chart-line {
+            fill: none;
+            stroke-width: 2;
+            stroke-linejoin: round;
+            stroke-linecap: round;
+        }
+        .station-chart-point {
+            stroke: var(--panel-bg-strong);
+            stroke-width: 1.5;
+        }
+        .station-chart-value-label {
+            fill: var(--text-main);
+            font-family: Arial, sans-serif;
+            font-size: 12px;
+            font-weight: 700;
+            paint-order: stroke;
+            stroke: var(--panel-bg);
+            stroke-width: 2px;
+            stroke-linejoin: round;
+        }
+        .station-chart-table-wrap {
+            margin-top: 8px;
+            overflow-x: auto;
+        }
+        .station-chart-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 10px;
+        }
+        .station-chart-table th,
+        .station-chart-table td {
+            padding: 4px 16px;
+            border: 1px solid var(--panel-border);
+            text-align: center;
+            white-space: nowrap;
+        }
+        .station-chart-table thead th {
+            font-size: 11px;
+        }
+        .station-chart-table tbody th {
+            color: var(--text-muted);
+            font-weight: normal;
+        }
+        .station-chart-legend-dot {
+            width: 7px;
+            height: 7px;
+            flex: 0 0 auto;
+            border-radius: 50%;
+        }
+        .station-chart-table .station-chart-legend-dot {
+            display: inline-block;
+            margin-right: 5px;
+        }
+        .station-chart-x-label,
+        .station-chart-y-label {
+            fill: var(--text-muted);
+            font-family: Arial, sans-serif;
+            font-size: 12px;
+        }
+        .station-charts-empty {
+            grid-column: 1 / -1;
+            margin: 12px;
+            color: var(--text-muted);
+            font-size: 12px;
+            text-align: center;
+        }
+        @media (max-width: 600px) {
+            #stationChartsDialog {
+                width: calc(100vw - 12px);
+                max-height: 92vh;
+            }
+            .station-charts-shell {
+                max-height: 92vh;
+            }
+            .station-charts-workspace {
+                grid-template-columns: minmax(0, 1fr);
+                grid-template-rows: auto minmax(0, 1fr);
+            }
+            .station-chart-parameters {
+                max-height: 120px;
+            }
+            .station-chart-parameter-list {
+                grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+            }
+        }
+
         .leaflet-control-layers-separator {
             border-top: 1px solid var(--header-border);
             margin: 5px -10px 5px -10px;
@@ -1165,33 +1441,62 @@
             color: var(--text-main);
             white-space: nowrap;
         }
-        .timeline-controls input[type="date"] {
+        .timeline-controls > .timeline-date-control {
+            position: relative;
+            flex: 0 0 95px;
+            width: 95px;
+            height: 20px;
+            box-sizing: border-box;
             border: 1px solid var(--input-border);
             background: var(--input-bg);
-            color: var(--text-main);
-            padding: 0 32px 0 3px;
             border-radius: 4px;
+            margin-left: 5px;
+            margin-right: 10px;
+            overflow: hidden;
+        }
+        .timeline-date-control input[type="date"] {
+            position: absolute;
+            inset: 0;
+            width: 100%;
+            min-width: 0;
+            height: 100%;
+            box-sizing: border-box;
+            border: 0;
+            background: transparent;
+            color: transparent;
+            padding: 0 32px 0 3px;
             font-family: Arial, sans-serif;
             font-size: 10.5px;
             outline: none;
-            height: 20px;
-            min-width: 95px;
-            width: 95px;
-            box-sizing: border-box;
             text-align: center;
             display: block;
             cursor: pointer;
-            margin-left: 5px;
-            margin-right: 10px;
         }
-        .timeline-controls input[type="date"]::-webkit-calendar-picker-indicator {
+        .timeline-date-control input[type="date"]::-webkit-datetime-edit {
+            color: transparent;
+        }
+        .timeline-date-control input[type="date"]::-webkit-calendar-picker-indicator {
             filter: invert(0.8) brightness(1.2);
             opacity: 0.9;
             cursor: pointer;
             margin-right: -22px;
         }
-        .timeline-controls input[type="date"]::-webkit-clear-button {
+        .timeline-date-control input[type="date"]::-webkit-clear-button {
             display: none;
+        }
+        #datePickerDisplay {
+            position: absolute;
+            inset: 0 32px 0 3px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: var(--text-main);
+            font-family: Arial, sans-serif;
+            font-size: 10.5px;
+            font-weight: 400;
+            line-height: normal;
+            white-space: nowrap;
+            pointer-events: none;
         }
         .theme-picker {
             display: inline-flex;
@@ -1341,7 +1646,10 @@
         <div class="timeline-header">
             <div class="timeline-controls">
                 <span style="color: var(--text-main); font-weight: 700; font-size: 11px; line-height: 1;">Data:</span>
-                <input type="date" id="datePicker">
+                <div class="timeline-date-control">
+                    <input type="date" id="datePicker" aria-label="Data (DD.MM.RRRR)">
+                    <span id="datePickerDisplay" aria-hidden="true"></span>
+                </div>
                 <div class="theme-picker" aria-label="Wybór motywu">
                     <span class="theme-picker-label">Motyw:</span>
                     <button id="themeLightBtn" class="theme-btn" type="button" data-theme="light" aria-label="Jasny motyw" aria-pressed="false"><span class="theme-icon">☀</span>Jasny</button>
@@ -1356,6 +1664,25 @@
             <div class="timeline-ticks" id="ticksContainer"></div>
         </div>
     </div>
+
+    <dialog id="stationChartsDialog" class="station-charts-dialog" aria-labelledby="stationChartsTitle">
+        <div class="station-charts-shell">
+            <header class="station-charts-header">
+                <div>
+                    <h2 id="stationChartsTitle"></h2>
+                    <p id="stationChartsDate"></p>
+                </div>
+                <button type="button" id="stationChartsClose" class="station-charts-close" aria-label="Zamknij wykresy" title="Zamknij">×</button>
+            </header>
+            <div class="station-charts-workspace">
+                <fieldset class="station-chart-parameters">
+                    <legend>Zmienne</legend>
+                    <div id="stationChartParameters" class="station-chart-parameter-list"></div>
+                </fieldset>
+                <div id="stationChartsContent" class="station-charts-content"></div>
+            </div>
+        </div>
+    </dialog>
 
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
     

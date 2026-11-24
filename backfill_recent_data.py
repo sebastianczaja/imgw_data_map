@@ -10,6 +10,7 @@ from urllib.error import URLError
 from urllib.parse import quote
 from urllib.request import Request, urlopen
 from zoneinfo import ZoneInfo
+from hourly_utc import build_repeated_hour_utc_readings, merge_utc_readings, repeated_hour_slots
 
 
 LOCAL_TZ = ZoneInfo("Europe/Warsaw")
@@ -25,10 +26,10 @@ def meteorological_date(timestamp):
     ).date().isoformat()
 
 
-def fetch_station_history(station_id, target_dates):
+def fetch_station_history(station_id, target_dates, utc_dates=(), hours_interval=HOURS_INTERVAL):
     url = (
         f"{TEMPERATURE_URL_BASE}{quote(station_id, safe='')}"
-        f"&hoursInterval={HOURS_INTERVAL}"
+        f"&hoursInterval={hours_interval}"
     )
     last_error = None
 
@@ -202,6 +203,10 @@ def fetch_station_history(station_id, target_dates):
                 if daily:
                     daily_readings[date_key] = daily
 
+            for date_key in utc_dates:
+                for hour, utc_readings in build_repeated_hour_utc_readings(payload, date.fromisoformat(date_key)).items():
+                    readings.setdefault(date_key, {}).setdefault(hour, {})["UTC"] = utc_readings
+
             return station_id, readings, daily_readings, None
         except (OSError, URLError, TimeoutError, ValueError, json.JSONDecodeError) as error:
             last_error = error
@@ -228,6 +233,12 @@ def add_missing_readings(document, station_readings, counts):
                 continue
 
             for parameter_key, value in parameters.items():
+                if parameter_key == "UTC":
+                    additions = merge_utc_readings(hour, value)
+                    if additions:
+                        counts.setdefault(hour_key, {}).setdefault(parameter_key, 0)
+                        counts[hour_key][parameter_key] += additions
+                    continue
                 if hour.get(parameter_key) is None or hour.get(parameter_key) == "":
                     hour[parameter_key] = value
                     counts.setdefault(hour_key, {}).setdefault(parameter_key, 0)
@@ -245,6 +256,22 @@ def add_missing_daily_readings(document, station_readings, counts):
             if properties.get(parameter_key) is None or properties.get(parameter_key) == "":
                 properties[parameter_key] = value
                 counts[parameter_key] = counts.get(parameter_key, 0) + 1
+
+
+def select_hourly_readings(readings, date_key, utc_only):
+    hourly = readings.get(date_key, {})
+    if not utc_only:
+        return hourly
+    return {hour: {"UTC": values["UTC"]} for hour, values in hourly.items() if "UTC" in values}
+
+
+def has_hourly_observations(properties):
+    hourly = properties.get("Hourly")
+    return isinstance(hourly, dict) and any(
+        isinstance(values, dict)
+        and any(values.get(key) is not None for key in ("Ta", "Precip", "Wind_avg", "Wind_max"))
+        for values in hourly.values()
+    )
 
 
 def initialize_hourly(document):
@@ -282,6 +309,11 @@ def main():
         "--to-date",
         type=date.fromisoformat,
         help="Last date to backfill (YYYY-MM-DD); defaults to today.",
+    )
+    parser.add_argument(
+        "--utc-only",
+        action="store_true",
+        help="Recover only the two UTC readings for repeated local hours.",
     )
     args = parser.parse_args()
 
@@ -328,7 +360,11 @@ def main():
             f"No dated GeoJSON files found between {start_date} and {end_date}"
         )
 
-    structure_changed_dates = {
+    utc_dates = tuple(date_key for date_key in target_dates if repeated_hour_slots(date.fromisoformat(date_key)))
+    if args.utc_only and not utc_dates:
+        raise ValueError("Selected dates do not include a repeated local hour")
+
+    structure_changed_dates = set() if args.utc_only else {
         date_key
         for date_key, document in documents.items()
         if initialize_hourly(document)
@@ -341,6 +377,10 @@ def main():
             for feature in document.get("features", [])
             if feature.get("properties", {}).get("Status") == "ACTIVE"
             and feature.get("properties", {}).get("Station_id") is not None
+            and (
+                not args.utc_only
+                or has_hourly_observations(feature["properties"])
+            )
         }
     )
     if not station_ids:
@@ -349,9 +389,16 @@ def main():
     readings_by_station = {}
     daily_readings_by_station = {}
     failures = []
+    hours_interval = HOURS_INTERVAL
+    if args.utc_only:
+        first_date = min(date.fromisoformat(date_key) for date_key in utc_dates)
+        first_utc = datetime(first_date.year, first_date.month, first_date.day, tzinfo=timezone.utc)
+        hours_interval = max(24, math.ceil((datetime.now(timezone.utc) - first_utc).total_seconds() / 3600) + 24)
+        if hours_interval > HOURS_INTERVAL:
+            raise ValueError(f"Requested UTC history exceeds the configured {HOURS_INTERVAL}-hour window")
     with concurrent.futures.ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
         futures = {
-            executor.submit(fetch_station_history, station_id, target_dates): station_id
+            executor.submit(fetch_station_history, station_id, target_dates, utc_dates, hours_interval): station_id
             for station_id in station_ids
         }
         for future in concurrent.futures.as_completed(futures):
@@ -373,14 +420,14 @@ def main():
     if today_key in documents and latest_path.is_file():
         with latest_path.open(encoding="utf-8") as latest_file:
             latest_document = json.load(latest_file)
-        if initialize_hourly(latest_document):
+        if not args.utc_only and initialize_hourly(latest_document):
             structure_changed_dates.add(today_key)
 
     additions_by_date = {date_key: {} for date_key in target_dates}
     documents_to_write = dict(documents)
     for date_key, document in documents.items():
         date_readings = {
-            station_id: readings.get(date_key, {})
+            station_id: select_hourly_readings(readings, date_key, args.utc_only)
             for station_id, readings in readings_by_station.items()
             if date_key in readings
         }
@@ -394,31 +441,33 @@ def main():
             for station_id, readings in daily_readings_by_station.items()
             if date_key in readings
         }
-        add_missing_daily_readings(
-            document,
-            date_daily_readings,
-            additions_by_date[date_key],
-        )
+        if not args.utc_only:
+            add_missing_daily_readings(
+                document,
+                date_daily_readings,
+                additions_by_date[date_key],
+            )
 
     if latest_document is not None:
         add_missing_readings(
             latest_document,
             {
-                station_id: readings.get(today_key, {})
+                station_id: select_hourly_readings(readings, today_key, args.utc_only)
                 for station_id, readings in readings_by_station.items()
                 if today_key in readings
             },
             additions_by_date[today_key],
         )
-        add_missing_daily_readings(
-            latest_document,
-            {
-                station_id: readings[today_key]
-                for station_id, readings in daily_readings_by_station.items()
-                if today_key in readings
-            },
-            additions_by_date[today_key],
-        )
+        if not args.utc_only:
+            add_missing_daily_readings(
+                latest_document,
+                {
+                    station_id: readings[today_key]
+                    for station_id, readings in daily_readings_by_station.items()
+                    if today_key in readings
+                },
+                additions_by_date[today_key],
+            )
 
     changed_dates = [
         date_key

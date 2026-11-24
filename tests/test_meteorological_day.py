@@ -1,8 +1,13 @@
 from datetime import date, timedelta
+import io
+import json
 import unittest
+from unittest.mock import patch
 from zoneinfo import ZoneInfo
 
+import backfill_recent_data
 import imgw_data
+from hourly_utc import merge_utc_readings
 
 
 class MeteorologicalDayTests(unittest.TestCase):
@@ -48,6 +53,69 @@ class MeteorologicalDayTests(unittest.TestCase):
         )
         self.assertEqual(extracted.temp_current, 4.0)
         self.assertEqual(extracted.temp_current_time, "2026-11-23T10:00:00Z")
+
+    def test_repeated_hour_preserves_both_utc_readings_and_wind_intervals(self):
+        data = {
+            "temperature": [
+                {"date": "2026-10-25T00:00:00Z", "value": 1.7},
+                {"date": "2026-10-25T01:00:00Z", "value": 1.4},
+            ],
+            "precip": [{"date": "2026-10-25T00:00:00Z", "value": 0}],
+            "wind": {
+                "velocityObs": [
+                    {"date": "2026-10-25T00:00:00Z", "value": 2},
+                    {"date": "2026-10-25T01:00:00Z", "value": 3},
+                ],
+                "maxVelocity": [
+                    {"date": "2026-10-24T23:50:00Z", "value": 5},
+                    {"date": "2026-10-25T00:50:00Z", "value": 7},
+                ],
+            },
+        }
+        hourly = imgw_data.build_hourly_data(data, date(2026, 10, 25))
+        utc = hourly["02"]["UTC"]
+        self.assertEqual(utc["2026-10-25T00:00:00Z"], {"Ta": 1.7, "Precip": 0, "Wind_avg": 2, "Wind_max": 5})
+        self.assertEqual(utc["2026-10-25T01:00:00Z"], {"Ta": 1.4, "Wind_avg": 3, "Wind_max": 7})
+        self.assertEqual(hourly["02"]["Ta"], 1.4)
+
+    def test_utc_backfill_merges_without_overwriting_existing_readings(self):
+        hour = {"UTC": {"2026-10-25T00:00:00Z": {"Ta": 1}}}
+        additions = merge_utc_readings(hour, {
+            "2026-10-25T00:00:00Z": {"Ta": 2, "Precip": 0},
+            "2026-10-25T01:00:00Z": {"Ta": 3},
+        })
+        self.assertEqual(additions, 3)
+        self.assertEqual(hour["UTC"]["2026-10-25T00:00:00Z"], {"Ta": 1, "Precip": 0})
+        self.assertEqual(hour["UTC"]["2026-10-25T01:00:00Z"], {"Ta": 3})
+
+    def test_spring_clock_change_does_not_create_repeated_hour_metadata(self):
+        hourly = imgw_data.build_hourly_data({}, date(2026, 3, 29))
+        self.assertTrue(all("UTC" not in values for values in hourly.values()))
+
+    def test_backfill_recovers_utc_without_changing_existing_local_values(self):
+        payload = {
+            "temperature": [
+                {"date": "2026-10-25T00:00:00Z", "value": 1.7},
+                {"date": "2026-10-25T01:00:00Z", "value": 1.4},
+            ]
+        }
+        with patch.object(backfill_recent_data, "urlopen", return_value=io.BytesIO(json.dumps(payload).encode())):
+            _, readings, _, error = backfill_recent_data.fetch_station_history(
+                "123", {"2026-10-25"}, ("2026-10-25",), 800
+            )
+        self.assertIsNone(error)
+        document = {"features": [{"properties": {
+            "Status": "ACTIVE", "Station_id": "123",
+            "Hourly": {"02": {"Ta": 9}},
+        }}]}
+        counts = {}
+        selected = backfill_recent_data.select_hourly_readings(readings, "2026-10-25", True)
+        backfill_recent_data.add_missing_readings(document, {"123": selected}, counts)
+        hour = document["features"][0]["properties"]["Hourly"]["02"]
+        self.assertEqual(hour["Ta"], 9)
+        self.assertEqual(hour["UTC"]["2026-10-25T00:00:00Z"]["Ta"], 1.7)
+        self.assertEqual(hour["UTC"]["2026-10-25T01:00:00Z"]["Ta"], 1.4)
+        self.assertGreater(counts["02"]["UTC"], 0)
 
 
 if __name__ == "__main__":
