@@ -29,13 +29,19 @@ function station(id, date = '2026-11-22') {
 
 function renderMarkers(stations, date = '2026-11-22', hour = '12', latestDate = date, options = {}) {
     const markers = {};
+    const TestDate = options.now ? class extends Date {
+        constructor(...args) { super(...(args.length ? args : [options.now])); }
+    } : Date;
     const end = Date.parse(`${date}T06:00:00Z`);
     const days = {};
     for (let offset = 0; offset <= 30; offset++) {
         const day = new Date(end - offset * 86400000).toISOString().slice(0, 10);
-        days[day] = { stations: Object.fromEntries(stations.map(item => [
-            item.current.Station_id, offset === 1 ? [(end - 86400000) / 1000, (end - 86400000) / 1000] : null
-        ])) };
+        days[day] = {
+            stations: Object.fromEntries(stations.map(item => [
+                item.current.Station_id, offset === 1 ? [(end - 86400000) / 1000, (end - 86400000) / 1000] : null
+            ])),
+            ...(options.dailyParameters?.[day] ? { parameters: options.dailyParameters[day] } : {})
+        };
     }
     const parameters = Object.fromEntries(stations.map(item => [
         item.current.Station_id,
@@ -51,9 +57,11 @@ function renderMarkers(stations, date = '2026-11-22', hour = '12', latestDate = 
         ...Object.fromEntries(groups.map(group => [group, group])),
         globalGeoJsonData: { features: stations.map(item => ({ properties: item.current })) },
         meteorologicalDate: date,
+        Date: TestDate,
         meteorologicalHourlySlots: slotsContext.getMeteorologicalHourlySlots(date),
         latestAvailableDate: latestDate,
         latestMeteorologicalHour: null,
+        latestMeteorologicalHourByParameter: null,
         getMeteorologicalHourlySlots: slotsContext.getMeteorologicalHourlySlots,
         previousDayStations: new Map(stations.map(item => [item.current.Station_id, item.previous])),
         stationActivityIndex: options.index
@@ -95,6 +103,12 @@ function renderMarkers(stations, date = '2026-11-22', hour = '12', latestDate = 
         `latestMeteorologicalHour = latestAvailableDate === meteorologicalDate
             ? getLatestMeteorologicalHourlyData(globalGeoJsonData, { features: [...previousDayStations.values()].map(properties => ({ properties })) }, meteorologicalDate)
             : null;`,
+        `latestMeteorologicalHourByParameter = latestAvailableDate === meteorologicalDate
+            ? Object.fromEntries(['Ta', 'Precip', 'Wind_avg', 'Wind_max'].map(parameterKey => [
+                parameterKey,
+                getLatestMeteorologicalHourlyData(globalGeoJsonData, { features: [...previousDayStations.values()].map(properties => ({ properties })) }, meteorologicalDate, parameterKey)
+            ]))
+            : null;`,
         `renderDataForHour(${JSON.stringify(hour)});`
     ].join('\n'), context);
     return markers;
@@ -102,6 +116,7 @@ function renderMarkers(stations, date = '2026-11-22', hour = '12', latestDate = 
 
 test('closed and missing stations have only clickable markers and remain filterable', () => {
     const layers = [];
+    const popups = [];
     const context = vm.createContext({
         visibleStationStatuses: { active: true, incomplete: true, closed: true, missing: true },
         getMarkerStatus: feature => feature.properties.status,
@@ -112,7 +127,7 @@ test('closed and missing stations have only clickable markers and remain filtera
         getStationHighlightKey: () => '',
         map: { getSize: () => ({ x: 800, y: 600 }) },
         L: {
-            circleMarker: () => ({ kind: 'marker', bindPopup() {}, on() {} }),
+            circleMarker: () => ({ kind: 'marker', bindPopup(content) { popups.push(content); }, on() {} }),
             tooltip: () => ({
                 kind: 'label',
                 setContent() { return this; },
@@ -133,8 +148,11 @@ test('closed and missing stations have only clickable markers and remain filtera
     add('missing', null, 'Ta');
     assert.deepEqual(layers, ['marker']);
     layers.length = 0;
+    popups.length = 0;
     add('active', 2, 'Ta');
     assert.deepEqual(layers, ['marker', 'label']);
+    assert.match(popups[0], /border:1px solid #000/);
+    assert.match(popups[0], /color:#000/);
     layers.length = 0;
     add('incomplete', null, 'Ta');
     assert.deepEqual(layers, ['marker']);
@@ -151,6 +169,9 @@ test('closed and missing stations have only clickable markers and remain filtera
     context.visibleStationStatuses.missing = false;
     add('missing', null, 'Ta');
     assert.deepEqual(layers, []);
+    context.visibleStationStatuses.missing = true;
+    add('missing', null, 'Tmin');
+    assert.deepEqual(layers, ['marker']);
 });
 
 test('meteorological slots include both boundaries in Polish local time', () => {
@@ -180,6 +201,42 @@ test('a stalled update ignores globally unavailable later hours but still detect
     delete gap.current.Hourly['01'].Wind_max;
     const markers = renderMarkers([complete, gap], '2026-11-22', '03');
     for (const group of ['etykietyTa', 'etykietyTminHour', 'etykietyTmaxHour', 'etykietyOpady10min', 'etykietyWindAvg', 'etykietyWindMax']) {
+        assert.equal(markers[`complete:${group}`], '#2ecc71', group);
+        assert.equal(markers[`gap:${group}`], '#ffff00', group);
+    }
+});
+
+test('a station without observations yet stays green before the meteorological day is complete', () => {
+    const observed = station('observed');
+    const waiting = station('waiting');
+    for (const sample of [observed, waiting]) {
+        for (const hourly of [sample.current.Hourly, sample.previous.Hourly]) {
+            for (const hour of Object.keys(hourly)) {
+                if (Number(hour) > 3) delete hourly[hour];
+            }
+        }
+    }
+    for (const hourly of [waiting.current.Hourly, waiting.previous.Hourly]) {
+        for (const values of Object.values(hourly)) delete values.Ta;
+    }
+    const markers = renderMarkers([observed, waiting], '2026-11-22', '03');
+    for (const group of ['etykietyTa', 'etykietyTminHour', 'etykietyTmaxHour']) {
+        assert.equal(markers[`waiting:${group}`], '#2ecc71', group);
+    }
+});
+
+test('a later wind observation does not extend the Ta completeness cutoff', () => {
+    const complete = station('complete');
+    const gap = station('gap');
+    for (const sample of [complete, gap]) {
+        for (const hour of Object.keys(sample.current.Hourly)) {
+            if (Number(hour) > 4) delete sample.current.Hourly[hour];
+        }
+        sample.current.Hourly['05'] = { Wind_max: 5 };
+    }
+    delete gap.previous.Hourly['22'].Ta;
+    const markers = renderMarkers([complete, gap], '2026-11-22', '04');
+    for (const group of ['etykietyTa', 'etykietyTminHour', 'etykietyTmaxHour']) {
         assert.equal(markers[`complete:${group}`], '#2ecc71', group);
         assert.equal(markers[`gap:${group}`], '#ffff00', group);
     }
@@ -217,16 +274,16 @@ test('later observations after the meteorological boundary expose a missing boun
     assert.equal(markers['boundary:etykietyTa'], '#ffff00');
 });
 
-test('a later global observation exposes missing measurements of another parameter', () => {
+test('a later observation of one parameter does not make other parameters incomplete', () => {
     const sample = station('gap');
     for (const hour of Object.keys(sample.current.Hourly)) {
         if (Number(hour) > 3) delete sample.current.Hourly[hour];
     }
     sample.current.Hourly['03'] = { Precip: 0 };
     const markers = renderMarkers([sample], '2026-11-22', '02');
-    assert.equal(markers['gap:etykietyTa'], '#ffff00');
+    assert.equal(markers['gap:etykietyTa'], '#2ecc71');
     assert.equal(markers['gap:etykietyOpady10min'], '#2ecc71');
-    assert.equal(markers['gap:etykietyWindAvg'], '#ffff00');
+    assert.equal(markers['gap:etykietyWindAvg'], '#2ecc71');
 });
 
 test('a stalled update between repeated UTC hours checks only the observed occurrence', () => {
@@ -290,7 +347,7 @@ test('missing previous-day data does not mark meteorological observations as com
     }
 });
 
-test('missing selected-hour readings are yellow when the day contains measurements', () => {
+test('missing selected-hour Ta is not yellow without a gap in the meteorological day', () => {
     const missing = station('missing');
     delete missing.current.Hourly['12'].Ta;
     delete missing.current.Hourly['12'].Precip;
@@ -302,7 +359,8 @@ test('missing selected-hour readings are yellow when the day contains measuremen
     }
     const values = {};
     const markers = renderMarkers([missing, noData], '2026-11-22', '12', '2026-11-22', { values });
-    for (const group of ['etykietyTa', 'etykietyOpady10min', 'etykietyWindAvg']) {
+    assert.equal(markers['missing:etykietyTa'], '#2ecc71');
+    for (const group of ['etykietyOpady10min', 'etykietyWindAvg']) {
         assert.equal(markers[`missing:${group}`], '#ffff00', group);
     }
     assert.equal(values['missing:etykietyOpady10min'], null);
@@ -310,7 +368,7 @@ test('missing selected-hour readings are yellow when the day contains measuremen
     const filtered = renderMarkers([missing], '2026-11-22', '12', '2026-11-22', {
         visible: { active: true, incomplete: false, missing: true, closed: true }
     });
-    assert.equal(filtered['missing:etykietyTa'], undefined);
+    assert.equal(filtered['missing:etykietyTa'], '#2ecc71');
     assert.equal(filtered['missing:etykietyOpady10min'], undefined);
     assert.equal(filtered['missing:etykietyWindAvg'], undefined);
 });
@@ -393,7 +451,8 @@ test('daily Tmin and Tmax require their own measurement history', () => {
     const minOnly = station('min-only');
     const later = station('later');
     const current = station('current');
-    const samples = [never, minOnly, later, current];
+    const stale = station('stale');
+    const samples = [never, minOnly, later, current, stale];
     for (const sample of samples) {
         sample.current.Tmin = null;
         sample.current.Tmax = null;
@@ -404,7 +463,8 @@ test('daily Tmin and Tmax require their own measurement history', () => {
         never: { Ta: end - 86400 },
         'min-only': { Ta: end - 86400, Tmin: end - 86400 },
         later: { Ta: end - 86400, Tmin: end + 1, Tmax: end + 1 },
-        current: { Ta: end - 86400 }
+        current: { Ta: end - 86400 },
+        stale: { Ta: end - 86400 }
     };
     const days = {};
     for (let offset = 0; offset <= 30; offset++) {
@@ -413,8 +473,13 @@ test('daily Tmin and Tmax require their own measurement history', () => {
             sample.current.Station_id, offset === 1 ? [end - 86400, end - 86400] : null
         ])) };
     }
-    const markers = renderMarkers(samples, '2026-11-22', '12', '2026-11-22', {
-        index: { days, parameters }
+    const recentMinDay = new Date((end - 29 * 86400) * 1000).toISOString().slice(0, 10);
+    const staleMinDay = new Date((end - 30 * 86400) * 1000).toISOString().slice(0, 10);
+    days[recentMinDay].parameters = { 'min-only': 16 };
+    days[staleMinDay].parameters = { stale: 16 };
+    const markers = renderMarkers(samples, '2026-11-22', '12', '2026-11-23', {
+        index: { days, parameters },
+        dailyParameters: Object.fromEntries(Object.entries(days).map(([day, entry]) => [day, entry.parameters]))
     });
     for (const id of ['never', 'later']) {
         assert.equal(markers[`${id}:etykietyTmin`], undefined);
@@ -424,8 +489,39 @@ test('daily Tmin and Tmax require their own measurement history', () => {
     assert.equal(markers['min-only:etykietyTmin'], '#e74c3c');
     assert.equal(markers['min-only:etykietyTmax'], undefined);
     assert.equal(markers['current:etykietyTmax'], '#2ecc71');
+    assert.equal(markers['current:etykietyTmin'], undefined);
+    assert.equal(markers['stale:etykietyTmin'], undefined);
     assert.equal(markers['never:etykietyTminHour'], '#2ecc71');
     assert.equal(markers['never:etykietyTmaxHour'], '#2ecc71');
+});
+
+test('daily extrema deadline is 22:00 in Warsaw time', () => {
+    const context = vm.createContext({ Intl });
+    vm.runInContext(functionSource('hasDailyExtremaDeadlinePassed', 'getStationActivity'), context);
+    const deadlinePassed = context.hasDailyExtremaDeadlinePassed;
+    assert.equal(deadlinePassed('2026-11-25', new Date('2026-11-25T20:59:00Z')), false);
+    assert.equal(deadlinePassed('2026-11-25', new Date('2026-11-25T21:00:00Z')), true);
+    assert.equal(deadlinePassed('2026-11-24', new Date('2026-11-25T12:00:00Z')), true);
+    assert.equal(deadlinePassed('2026-11-26', new Date('2026-11-25T21:00:00Z')), false);
+});
+
+test('daily extrema stay hidden before 22:00 and turn into marker-only missing status after', () => {
+    const pending = station('pending', '2026-11-25');
+    pending.current.Tmin = null;
+    pending.current.Tmax = null;
+    const priorDay = '2026-11-24';
+    const beforeDeadline = renderMarkers([pending], '2026-11-25', '12', '2026-11-25', {
+        dailyParameters: { [priorDay]: { pending: 16 | 32 } },
+        now: '2026-11-25T20:59:00Z'
+    });
+    const afterDeadline = renderMarkers([pending], '2026-11-25', '12', '2026-11-25', {
+        dailyParameters: { [priorDay]: { pending: 16 | 32 } },
+        now: '2026-11-25T21:00:00Z'
+    });
+    for (const group of ['etykietyTmin', 'etykietyTmax']) {
+        assert.equal(beforeDeadline[`pending:${group}`], undefined);
+        assert.equal(afterDeadline[`pending:${group}`], '#e74c3c');
+    }
 });
 
 test('inactive stations only appear on parameter layers they have measured', () => {
@@ -468,7 +564,7 @@ test('inactive stations only appear on parameter layers they have measured', () 
     assert.equal(markers['recorded-closed:etykietyOpady10min'], '#b0b0b0');
 });
 
-test('a partially collected meteorological day is not an all-day absence', () => {
+test('a measured value after a missing slot exposes a gap in the current day', () => {
     const sample = station('partial');
     for (const hourly of [sample.current.Hourly, sample.previous.Hourly]) {
         for (const values of Object.values(hourly)) delete values.Ta;
@@ -476,6 +572,8 @@ test('a partially collected meteorological day is not an all-day absence', () =>
     for (const hour of Object.keys(sample.current.Hourly)) {
         if (Number(hour) > 3) delete sample.current.Hourly[hour];
     }
+    sample.previous.Hourly['22'].Ta = 1;
+    sample.current.Hourly['03'].Ta = 2;
     const markers = renderMarkers([sample], '2026-11-22', '03');
     assert.equal(markers['partial:etykietyTa'], '#ffff00');
 });

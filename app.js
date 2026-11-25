@@ -190,6 +190,7 @@ let meteorologicalHourlySlots = [];
 let previousDayStations = new Map();
 let latestAvailableDate = null;
 let latestMeteorologicalHour = null;
+let latestMeteorologicalHourByParameter = null;
 let dateLoadRequest = 0;
 let stationActivityIndex = null;
 let stationActivityRequest = null;
@@ -219,7 +220,7 @@ function getMeteorologicalHourlySlots(dateStr) {
     return slots;
 }
 
-function getLatestMeteorologicalHourlyData(data, previousData, dateStr) {
+function getLatestMeteorologicalHourlyData(data, previousData, dateStr, parameterKey = null) {
     const nextDate = new Date(Date.parse(`${dateStr}T00:00:00Z`) + 86400000).toISOString().slice(0, 10);
     const slots = [...getMeteorologicalHourlySlots(dateStr), ...getMeteorologicalHourlySlots(nextDate)];
     let latest = null;
@@ -234,7 +235,7 @@ function getLatestMeteorologicalHourlyData(data, previousData, dateStr) {
             const values = slot.repeated && hour?.UTC && Object.keys(hour.UTC).length
                 ? hour.UTC[slot.utc]
                 : hour;
-            for (const key of ['Ta', 'Precip', 'Wind_avg', 'Wind_max']) {
+            for (const key of parameterKey ? [parameterKey] : ['Ta', 'Precip', 'Wind_avg', 'Wind_max']) {
                 const value = values?.[key];
                 if (value !== undefined && value !== null && value !== '' && Number.isFinite(Number(value))) {
                     latest = Math.max(latest ?? -Infinity, timestamp);
@@ -243,6 +244,13 @@ function getLatestMeteorologicalHourlyData(data, previousData, dateStr) {
         }
     }
     return latest;
+}
+
+function getLatestMeteorologicalHourForParameter(parameterKey) {
+    return latestMeteorologicalHourByParameter
+        && Object.hasOwn(latestMeteorologicalHourByParameter, parameterKey)
+        ? latestMeteorologicalHourByParameter[parameterKey]
+        : latestMeteorologicalHour;
 }
 
 function getMeteorologicalHourlyValue(feature, slot, parameterKey) {
@@ -261,7 +269,7 @@ function hasMeteorologicalHourlyValue(feature, slot, parameterKey) {
 }
 
 function hasCompleteHourlyData(feature, parameterKey) {
-    const cutoff = latestMeteorologicalHour;
+    const cutoff = getLatestMeteorologicalHourForParameter(parameterKey);
     const slots = cutoff === null
         ? meteorologicalHourlySlots
         : meteorologicalHourlySlots.filter(slot => Date.parse(slot.utc) <= cutoff);
@@ -271,9 +279,33 @@ function hasCompleteHourlyData(feature, parameterKey) {
 }
 
 function hasAnyMeteorologicalHourlyData(feature, parameterKey) {
+    const cutoff = getLatestMeteorologicalHourForParameter(parameterKey);
     return meteorologicalHourlySlots.some(slot =>
-        (latestMeteorologicalHour === null || Date.parse(slot.utc) <= latestMeteorologicalHour)
+        (cutoff === null || Date.parse(slot.utc) <= cutoff)
         && hasMeteorologicalHourlyValue(feature, slot, parameterKey));
+}
+
+function hasRecentDailyExtremaMeasurement(feature, parameterKey) {
+    const stationId = String(feature?.properties?.Station_id);
+    const parameterBit = parameterKey === 'Tmin' ? 16 : 32;
+    const selectedDay = Date.parse(`${meteorologicalDate}T00:00:00Z`);
+    for (let offset = 0; offset < 30; offset++) {
+        const day = new Date(selectedDay - offset * 86400000).toISOString().slice(0, 10);
+        const mask = stationActivityIndex?.days?.[day]?.parameters?.[stationId];
+        if (Number.isInteger(mask) && (mask & parameterBit) !== 0) return true;
+    }
+    return false;
+}
+
+function hasDailyExtremaDeadlinePassed(selectedDate, now = new Date()) {
+    const parts = Object.fromEntries(new Intl.DateTimeFormat('en-CA', {
+        timeZone: 'Europe/Warsaw', year: 'numeric', month: '2-digit', day: '2-digit',
+        hour: '2-digit', hourCycle: 'h23'
+    }).formatToParts(now).filter(part => part.type !== 'literal').map(part => [part.type, part.value]));
+    const today = `${parts.year}-${parts.month}-${parts.day}`;
+    if (selectedDate < today) return true;
+    if (selectedDate > today) return false;
+    return Number(parts.hour) >= 22;
 }
 
 function getStationActivity(feature) {
@@ -310,6 +342,14 @@ function getParameterCapability(feature, parameterKey) {
 }
 
 function getMarkerStatus(feature, parameterKey) {
+    if (parameterKey === 'Tmin' || parameterKey === 'Tmax') {
+        const properties = feature?.properties;
+        if (getRoundedNumericValue(properties?.[parameterKey]) !== null) return 'active';
+        if (properties?.Activity_check_failed || !hasRecentDailyExtremaMeasurement(feature, parameterKey)) {
+            return 'unsupported';
+        }
+        return hasDailyExtremaDeadlinePassed(meteorologicalDate) ? 'missing' : 'unsupported';
+    }
     if (parameterKey && getParameterCapability(feature, parameterKey) === false) return 'unsupported';
     const activity = getStationActivity(feature);
     if (activity === 'inactive' || (activity === 'unknown' && feature?.properties?.Status === 'CLOSED')) return 'closed';
@@ -319,19 +359,26 @@ function getMarkerStatus(feature, parameterKey) {
     const capability = getParameterCapability(feature, effectiveParameter);
     if (capability === false) return 'unsupported';
     if (feature?.properties?.Activity_check_failed) return 'incomplete';
-    const dayFinished = latestMeteorologicalHour === null
-        ? meteorologicalDate !== latestAvailableDate
-        : meteorologicalHourlySlots.length === 25
-            && latestMeteorologicalHour >= Date.parse(meteorologicalHourlySlots[24].utc);
     const completenessParameter = ['Ta', 'Tmin_hour', 'Tmax_hour'].includes(effectiveParameter)
         ? 'Ta'
         : ['Precip', 'Wind_avg', 'Wind_max'].includes(effectiveParameter) ? effectiveParameter : null;
+    const latestParameterHour = completenessParameter
+        ? getLatestMeteorologicalHourForParameter(completenessParameter)
+        : latestMeteorologicalHour;
+    const dayCompletionHour = latestParameterHour ?? latestMeteorologicalHour;
+    const dayFinished = dayCompletionHour === null
+        ? meteorologicalDate !== latestAvailableDate
+        : meteorologicalHourlySlots.length === 25
+            && dayCompletionHour >= Date.parse(meteorologicalHourlySlots[24].utc);
     if (completenessParameter) {
         if (!hasAnyMeteorologicalHourlyData(feature, completenessParameter)) {
+            if (['Ta', 'Tmin_hour', 'Tmax_hour'].includes(parameterKey) && !dayFinished) {
+                return activity === 'active' ? 'active' : 'incomplete';
+            }
             return capability === true && activity === 'active' && dayFinished && previousDayStations.has(String(feature?.properties?.Station_id))
                 ? 'missing' : 'incomplete';
         }
-        if (['Ta', 'Precip', 'Wind_avg'].includes(parameterKey)) {
+        if (['Precip', 'Wind_avg'].includes(parameterKey)) {
             const properties = feature?.properties;
             const selectedValue = properties?.Hourly
                 ? properties.Hourly[currentHourStr]?.[parameterKey]
@@ -478,7 +525,7 @@ function addDataToParamGroup(rawValue, suffix, className, positionClass, latlng,
         const marker = L.circleMarker(latlng, markerStyle);
         const statusNames = { active: 'Aktywna', incomplete: 'Niepełne dane', missing: 'Brak danych', closed: 'Nieczynna / zamknięta' };
         marker.bindPopup(popupContent.replace('__STATION_STATUS__',
-            `<span style="color:${markerStyle.fillColor}; font-weight:bold;">${statusNames[status]}</span>`), {
+            `<span style="display:inline-block; padding:1px 4px; border:1px solid #000; border-radius:3px; color:#000; background-color:${markerStyle.fillColor}; font-weight:bold;">${statusNames[status]}</span>`), {
             autoPan: false,
             maxWidth: Math.min(520, Math.max(160, map.getSize().x - 24)),
             maxHeight: Math.min(320, Math.max(120, map.getSize().y - 24)),
@@ -663,6 +710,12 @@ function processData(data, selectedHour, dateStr, previousData) {
     );
     latestMeteorologicalHour = dateStr === latestAvailableDate
         ? getLatestMeteorologicalHourlyData(data, previousData, dateStr)
+        : null;
+    latestMeteorologicalHourByParameter = dateStr === latestAvailableDate
+        ? Object.fromEntries(['Ta', 'Precip', 'Wind_avg', 'Wind_max'].map(parameterKey => [
+            parameterKey,
+            getLatestMeteorologicalHourlyData(data, previousData, dateStr, parameterKey)
+        ]))
         : null;
     const hourSlider = document.getElementById('hourSlider');
     const hour = Number.isInteger(selectedHour) && selectedHour >= 0 && selectedHour <= 23
@@ -1374,10 +1427,8 @@ function loadDataForDate(dateStr, selectedHour) {
             stationActivityIndex = activityIndex;
             if (previous.error) console.warn('Nie udało się wczytać danych poprzedniego dnia:', previousPath, previous.error);
             processData(data, selectedHour, dateStr, previous.data);
-            const historyWarning = document.getElementById('station-history-warning');
             const incompleteHistory = !activityIndex || data.features.some(feature =>
                 feature?.geometry && (feature?.properties?.Activity_check_failed || getStationActivity(feature) === 'unknown'));
-            if (historyWarning) historyWarning.hidden = !incompleteHistory;
             const currentTimeLabel = document.getElementById('currentTimeLabel');
             const span = currentTimeLabel ? currentTimeLabel.querySelector('span') : null;
             if (span) span.style.color = '#2ecc71';
@@ -1430,7 +1481,7 @@ function buildStationStatusControl() {
         ];
         div.innerHTML = `<strong>Status stacji</strong>${statuses.map(([key, color, label]) =>
             `<label><input type="checkbox" data-station-status="${key}" checked><span class="station-status-dot" style="background:${color}"></span>${label}</label>`
-        ).join('')}<small id="station-history-warning" hidden>Niepełna historia aktywności części stacji.</small>`;
+        ).join('')}`;
         div.querySelectorAll('input[data-station-status]').forEach(input => {
             input.addEventListener('change', () => {
                 visibleStationStatuses[input.dataset.stationStatus] = input.checked;

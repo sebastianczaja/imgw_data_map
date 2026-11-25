@@ -15,10 +15,11 @@ jednoznacznego dopasowania wartości nie są przypisywane.
 
 ### Kompletność danych godzinowych
 
-Dla najnowszego dnia żółte znaczniki uwzględniają pomiary do ostatniej godziny
-dostępnej w danych dowolnej stacji. Późniejsze godziny nie są oceniane, a
-wcześniejsze braki nadal powodują żółte oznaczenie. W starszych dniach
-sprawdzana jest cała doba meteorologiczna, łącznie z godzinami granicznymi.
+Dla najnowszego dnia żółte znaczniki uwzględniają pomiary do ostatniej godziny,
+w której dowolna stacja ma odczyt danego parametru. Późniejsze godziny ani
+odczyty innych parametrów nie są oceniane; wcześniejsze braki nadal powodują
+żółte oznaczenie. W starszych dniach sprawdzana jest cała doba meteorologiczna,
+łącznie z godzinami granicznymi.
 
 ### Statusy stacji
 
@@ -27,8 +28,9 @@ Panel przy mapie pozwala ukrywać stacje aktywne (zielone), z niepełnymi danymi
 (szare). Brak pojedynczej godziny nie powoduje czerwonego oznaczenia.
 Stacje nieczynne i stacje z całodobowym brakiem danych są widoczne jako same
 kropki, bez etykiet. Brak wartości godzinowej dla wybranej godziny również
-ukrywa etykietę; stacja pozostaje żółta, chyba że jest nieczynna lub ma
-całodobowy brak danych.
+ukrywa etykietę. Dla Ta oraz godzinowych ekstremów temperatury żółty status
+oznacza wykrytą lukę w danych; brak pomiarów z jeszcze niezakończonej doby sam
+w sobie nie powoduje żółtego statusu.
 Niezakończona lub jeszcze niepobrana doba nie jest uznawana za całodobowy brak.
 Aktywność jest oceniana dla 30 dni do końca wybranej doby meteorologicznej
 (06:00 UTC). Przy niepełnym archiwum odpowiednie statusy nie są potwierdzone;
@@ -39,6 +41,10 @@ potwierdzono żadnego pomiaru tego parametru w dostępnej historii do wybranego
 dnia. Dotyczy to również oznaczenia stacji jako nieczynnej w tej warstwie.
 Dobowe Tmin i Tmax wymagają osobnej historii każdego z tych parametrów;
 wcześniejsze pomiary Ta nie potwierdzają ich dostępności.
+Dobowe Tmin i Tmax są zielone, gdy IMGW udostępni wartość. Jeśli stacja miała
+ten parametr w którymś z ostatnich 30 dni, lecz brak wartości także po 22:00
+czasu polskiego, pojawia się czerwona kropka bez etykiety. Wcześniej brak nie
+jest jeszcze oznaczany.
 Starsze pomiary sprzed początku archiwum nie mogą zostać uwzględnione.
 
 Aktualizacja pobiera również profile zamkniętych stacji, także tych bez
