@@ -29,6 +29,7 @@ day = now_local.day
 url = "https://danepubliczne.imgw.pl/api/data/meteo"
 temperature_url_base = "https://hydro-back.imgw.pl/station/meteo/data?id="
 station_metadata_url = "https://hydro-back.imgw.pl/list/meteo"
+station_locations_url = "https://hydro-back.imgw.pl/map/stations/meteorologic?onlyMainStations=false"
 przymrozki_url_base =  "https://agrometeo.imgw.pl/przymrozki/api?d="
 
 def addZero(dataNumber):
@@ -127,19 +128,24 @@ class ExtractedPrecip:
         self.all_precips = all_precips
 
 def find_przymrozek(przymrozek_list, lon, lat):
-    if len(przymrozek_list) == 1:
-        return przymrozek_list[0]
+    matches = []
     for item in przymrozek_list:
         try:
             item_lon = float(item.get("lon"))
             item_lat = float(item.get("lat"))
-            if math.isclose(item_lon, float(lon), rel_tol=0, abs_tol=0.00001) and math.isclose(
-                item_lat, float(lat), rel_tol=0, abs_tol=0.00001
-            ):
-                return item
+            station_lon = float(lon)
+            station_lat = float(lat)
         except (TypeError, ValueError):
             continue
-    return None
+        if not all(math.isfinite(value) for value in (item_lon, item_lat, station_lon, station_lat)):
+            continue
+        if math.isclose(item_lon, station_lon, rel_tol=0, abs_tol=0.00001) and math.isclose(
+            item_lat, station_lat, rel_tol=0, abs_tol=0.00001
+        ):
+            matches.append(item)
+    if len(matches) > 1:
+        print(f"Niejednoznaczne dane przymrozków dla współrzędnych {lon}, {lat}.")
+    return matches[0] if len(matches) == 1 else None
 
 def get_meteo_day_window():
     # Doba meteorologiczna IMGW: 08:00-08:00 (lato) / 07:00-07:00 (zima) czasu lokalnego,
@@ -351,6 +357,28 @@ def apply_station_elevations(stations, metadata):
             matched += 1
     return matched
 
+
+def apply_station_coordinates(stations, metadata):
+    if not isinstance(metadata, dict) or not isinstance(metadata.get("stations"), list):
+        raise ValueError("IMGW zwróciło nieprawidłową listę współrzędnych stacji.")
+    matched = 0
+    for record in metadata["stations"]:
+        if not isinstance(record, dict) or record.get("id") is None:
+            continue
+        station = stations.get(str(record["id"]))
+        if not station or station.get("coordinates"):
+            continue
+        try:
+            lon, lat = float(record["lo"]), float(record["la"])
+        except (KeyError, TypeError, ValueError, OverflowError):
+            continue
+        if not math.isfinite(lon) or not math.isfinite(lat) or not -180 <= lon <= 180 or not -90 <= lat <= 90:
+            continue
+        station["coordinates"] = [lon, lat]
+        matched += 1
+    return matched
+
+
 async def gather_station_features(tasks, description):
     async def capture_result(task):
         try:
@@ -465,18 +493,16 @@ def add_missing_hourly_readings(document, readings_by_station):
     additions = 0
     for feature in document.get("features", []):
         properties = feature.get("properties", {})
-        if properties.get("Status") != "ACTIVE":
-            continue
-
         station_readings = readings_by_station.get(str(properties.get("Station_id")), {})
         hourly = properties.get("Hourly")
-        if not isinstance(hourly, dict):
+        if not station_readings:
             continue
+        if not isinstance(hourly, dict):
+            hourly = {}
+            properties["Hourly"] = hourly
 
         for hour_key, parameters in station_readings.items():
-            hour = hourly.get(hour_key)
-            if not isinstance(hour, dict):
-                continue
+            hour = hourly.setdefault(hour_key, {})
             for parameter_key, value in parameters.items():
                 if parameter_key == "UTC":
                     additions += merge_utc_readings(hour, value)
@@ -511,7 +537,7 @@ async def process_station(session, data, przymrozki_data, previous_date, previou
     station_id = data["kod_stacji"]
     station_info = stations_map.get(station_id)
 
-    if not station_info or not station_info["coordinates"]:
+    if not station_info:
         return None
 
     coords = station_info["coordinates"]
@@ -557,10 +583,12 @@ async def process_station(session, data, przymrozki_data, previous_date, previou
         "Hourly": hourly_data
     }
     properties = {k: v for k, v in raw_properties.items() if v is not None}
+    if station_info["Status"] == "CLOSED":
+        properties["Activity_checked"] = True
 
     return {
         "type": "Feature",
-        "geometry": {"type": "Point", "coordinates": coords},
+        "geometry": {"type": "Point", "coordinates": coords} if coords else None,
         "properties": properties
     }
 
@@ -576,12 +604,13 @@ async def process_missing_station(
             f"IMGW zwróciło nieprawidłowy profil stacji {station_info.get('Station_id')}."
         )
 
+    coordinates = station_info.get("coordinates")
     extracted_temps = extract_temperature_data(
         temperature_data,
-        przymrozki_data,
+        przymrozki_data if coordinates else None,
         station_info.get("Station_name"),
-        station_info.get("coordinates")[0],
-        station_info.get("coordinates")[1],
+        coordinates[0] if coordinates else None,
+        coordinates[1] if coordinates else None,
         now_local.date(),
     )
     extracted_precips = extract_precip_data(temperature_data)
@@ -615,10 +644,12 @@ async def process_missing_station(
         "Hourly": hourly_data
     }
     properties = {k: v for k, v in raw_properties.items() if v is not None}
+    if station_info["Status"] == "CLOSED":
+        properties["Activity_checked"] = True
 
     return {
         "type": "Feature",
-        "geometry": {"type": "Point", "coordinates": station_info.get("coordinates")},
+        "geometry": {"type": "Point", "coordinates": coordinates} if coordinates else None,
         "properties": properties
     }
 
@@ -633,9 +664,22 @@ def process_closed_station(station_info):
 
     return {
         "type": "Feature",
-        "geometry": {"type": "Point", "coordinates": station_info.get("coordinates")},
+        "geometry": {"type": "Point", "coordinates": station_info["coordinates"]} if station_info.get("coordinates") else None,
         "properties": properties
     }
+
+
+async def check_closed_station(session, station_info, przymrozki_data, previous_date, previous_day_readings, previous_feature=None):
+    try:
+        return await process_missing_station(
+            session, station_info, przymrozki_data, previous_date, previous_day_readings
+        )
+    except (RuntimeError, ValueError) as error:
+        print(f"Nie udało się sprawdzić zamkniętej stacji {station_info['Station_id']}: {error}")
+        feature = previous_feature if previous_feature is not None else process_closed_station(station_info)
+        feature["properties"]["Activity_check_failed"] = True
+        return feature
+
 
 async def main():
     previous_date = now_local.date() - timedelta(days=1)
@@ -644,6 +688,17 @@ async def main():
         "imgw_data", f"{previous_date_str}.geojson"
     )
     previous_day_readings = {}
+    date_str = f"{year}-{addZero(month)}-{addZero(day)}"
+    dated_path = os.path.join("imgw_data", f"{date_str}.geojson")
+    previous_features = {}
+    if os.path.isfile(dated_path):
+        with open(dated_path, encoding="utf-8") as source:
+            previous_payload = json.load(source)
+        previous_features = {
+            str(feature["properties"]["Station_id"]): feature
+            for feature in previous_payload.get("features", [])
+            if feature.get("properties", {}).get("Station_id") is not None
+        }
 
     async with aiohttp.ClientSession() as session:
         station_metadata = await fetch_json(
@@ -662,6 +717,12 @@ async def main():
         imgw_data = await fetch_json(session, url=url)
         if not imgw_data:
             raise RuntimeError("IMGW zwróciło pustą listę danych stacji.")
+        try:
+            locations = await fetch_json(session, station_locations_url)
+            matched_coordinates = apply_station_coordinates(stations_map, locations)
+            print(f"Uzupełniono współrzędne {matched_coordinates} stacji z IMGW.")
+        except (RuntimeError, ValueError) as error:
+            print(f"Nie udało się uzupełnić współrzędnych stacji: {error}")
 
         przymrozki_data = await get_przymrozki_data_grouped_by_name(session)
         if not przymrozki_data:
@@ -681,7 +742,7 @@ async def main():
         imgw_station_ids = {obj["kod_stacji"] for obj in imgw_data}
         missing_station_ids = active_station_ids - imgw_station_ids
 
-        missing_stations = [stations_map[sid] for sid in missing_station_ids if stations_map[sid]["coordinates"]]
+        missing_stations = [stations_map[sid] for sid in missing_station_ids]
 
         if missing_stations:
             missing_tasks = [
@@ -700,17 +761,23 @@ async def main():
             )
             features.extend(missing_features)
 
-        closed_stations = [station_info for station_info in stations_map.values() if station_info["Status"] == "CLOSED" and station_info.get("coordinates")]
-
+        closed_stations = [
+            station_info for sid, station_info in stations_map.items()
+            if station_info["Status"] == "CLOSED" and sid not in imgw_station_ids
+        ]
         if closed_stations:
-            closed_features = [process_closed_station(station_info) for station_info in closed_stations]
-            features.extend(closed_features)
+            closed_tasks = [
+                check_closed_station(
+                    session, station, przymrozki_data, previous_date, previous_day_readings,
+                    previous_features.get(str(station["Station_id"]))
+                )
+                for station in closed_stations
+            ]
+            features.extend(await gather_station_features(closed_tasks, "Sprawdzanie zamkniętych stacji"))
 
-        date_str = f"{year}-{addZero(month)}-{addZero(day)}"
         out_dir = "imgw_data"
         os.makedirs(out_dir, exist_ok=True)
 
-        dated_path = os.path.join(out_dir, f"{date_str}.geojson")
         latest_path = "imgw_data.geojson"
 
         payload = {"type": "FeatureCollection", "features": features}
@@ -727,6 +794,25 @@ async def main():
             additions = add_missing_hourly_readings(
                 previous_payload, previous_day_readings
             )
+            previous_ids = {
+                str(feature.get("properties", {}).get("Station_id"))
+                for feature in previous_payload.get("features", [])
+            }
+            for feature in features:
+                properties = feature["properties"]
+                station_id = str(properties.get("Station_id"))
+                if station_id in previous_ids or station_id not in previous_day_readings:
+                    continue
+                previous_properties = {
+                    key: properties[key] for key in ("Station_id", "Station_name", "Status", "Elevation")
+                    if key in properties
+                }
+                previous_properties["Hourly"] = previous_day_readings[station_id]
+                previous_payload["features"].append({
+                    "type": "Feature", "geometry": feature["geometry"], "properties": previous_properties
+                })
+                previous_ids.add(station_id)
+                additions += 1
             if additions:
                 temporary_path = f"{previous_date_path}.tmp"
                 try:

@@ -172,10 +172,10 @@ const rankingParameterDefinitions = [
 ];
 
 const stationChartParameters = [
-    { key: 'Ta', label: 'Temperatura aktualna (Ta)', unit: '°C', hourlyKey: 'Ta', yMin: -40, yMax: 40, color: '#d35400' },
-    { key: 'Precip_hour', label: 'Opad godzinowy (Precip_hour)', unit: 'mm', hourlyKey: 'Precip', yMin: 0, yMax: 30, color: '#2878b5' },
-    { key: 'Wind_avg', label: 'Średnia prędkość wiatru (Wind_avg)', unit: 'km/h', hourlyKey: 'Wind_avg', convertWindSpeed: true, yMin: 0, yMax: 200, color: '#7754a5' },
-    { key: 'Wind_max', label: 'Maksymalny poryw wiatru (Wind_max)', unit: 'km/h', hourlyKey: 'Wind_max', convertWindSpeed: true, yMin: 0, yMax: 200, color: '#b3397a' }
+    { key: 'Ta', label: 'Temperatura aktualna (Ta)', unit: '°C', hourlyKey: 'Ta', color: '#d35400' },
+    { key: 'Precip_hour', label: 'Opad godzinowy (Precip_hour)', unit: 'mm', hourlyKey: 'Precip', color: '#2878b5' },
+    { key: 'Wind_avg', label: 'Średnia prędkość wiatru (Wind_avg)', unit: 'km/h', hourlyKey: 'Wind_avg', convertWindSpeed: true, color: '#7754a5' },
+    { key: 'Wind_max', label: 'Maksymalny poryw wiatru (Wind_max)', unit: 'km/h', hourlyKey: 'Wind_max', convertWindSpeed: true, color: '#b3397a' }
 ];
 
 let activeTempParam = 'Ta';
@@ -188,7 +188,12 @@ let globalGeoJsonData = null;
 let meteorologicalDate = '';
 let meteorologicalHourlySlots = [];
 let previousDayStations = new Map();
+let latestAvailableDate = null;
+let latestMeteorologicalHour = null;
 let dateLoadRequest = 0;
+let stationActivityIndex = null;
+let stationActivityRequest = null;
+const visibleStationStatuses = { active: true, incomplete: true, missing: true, closed: true };
 
 function getMeteorologicalHourlySlots(dateStr) {
     const end = Date.parse(`${dateStr}T06:00:00Z`);
@@ -214,6 +219,32 @@ function getMeteorologicalHourlySlots(dateStr) {
     return slots;
 }
 
+function getLatestMeteorologicalHourlyData(data, previousData, dateStr) {
+    const nextDate = new Date(Date.parse(`${dateStr}T00:00:00Z`) + 86400000).toISOString().slice(0, 10);
+    const slots = [...getMeteorologicalHourlySlots(dateStr), ...getMeteorologicalHourlySlots(nextDate)];
+    let latest = null;
+    for (const slot of slots) {
+        const source = slot.date === dateStr ? data : slot.date < dateStr ? previousData : null;
+        if (!Array.isArray(source?.features)) continue;
+        const timestamp = Date.parse(slot.utc);
+        for (const feature of source.features) {
+            const properties = feature?.properties;
+            if (!properties || properties.Status === 'CLOSED') continue;
+            const hour = properties.Hourly?.[slot.hour];
+            const values = slot.repeated && hour?.UTC && Object.keys(hour.UTC).length
+                ? hour.UTC[slot.utc]
+                : hour;
+            for (const key of ['Ta', 'Precip', 'Wind_avg', 'Wind_max']) {
+                const value = values?.[key];
+                if (value !== undefined && value !== null && value !== '' && Number.isFinite(Number(value))) {
+                    latest = Math.max(latest ?? -Infinity, timestamp);
+                }
+            }
+        }
+    }
+    return latest;
+}
+
 function getMeteorologicalHourlyValue(feature, slot, parameterKey) {
     const properties = feature?.properties;
     const station = slot.date === meteorologicalDate
@@ -230,24 +261,99 @@ function hasMeteorologicalHourlyValue(feature, slot, parameterKey) {
 }
 
 function hasCompleteHourlyData(feature, parameterKey) {
+    const cutoff = latestMeteorologicalHour;
+    const slots = cutoff === null
+        ? meteorologicalHourlySlots
+        : meteorologicalHourlySlots.filter(slot => Date.parse(slot.utc) <= cutoff);
     return meteorologicalHourlySlots.length === 25
-        && meteorologicalHourlySlots.every(slot => hasMeteorologicalHourlyValue(feature, slot, parameterKey));
+        && slots.length > 0
+        && slots.every(slot => hasMeteorologicalHourlyValue(feature, slot, parameterKey));
 }
 
 function hasAnyMeteorologicalHourlyData(feature, parameterKey) {
-    return meteorologicalHourlySlots.some(slot => hasMeteorologicalHourlyValue(feature, slot, parameterKey));
+    return meteorologicalHourlySlots.some(slot =>
+        (latestMeteorologicalHour === null || Date.parse(slot.utc) <= latestMeteorologicalHour)
+        && hasMeteorologicalHourlyValue(feature, slot, parameterKey));
+}
+
+function getStationActivity(feature) {
+    if (!stationActivityIndex?.days || !meteorologicalDate) return 'unknown';
+    const end = Date.parse(`${meteorologicalDate}T06:00:00Z`);
+    const start = end - 30 * 86400000;
+    const stationId = String(feature?.properties?.Station_id);
+    let complete = true;
+    for (let timestamp = start; timestamp <= end; timestamp += 86400000) {
+        const day = new Date(timestamp).toISOString().slice(0, 10);
+        const stations = stationActivityIndex.days[day]?.stations;
+        if (!stations || !Object.hasOwn(stations, stationId)) {
+            complete = false;
+            continue;
+        }
+        const observed = stations[stationId];
+        if (observed && observed[0] * 1000 <= end && observed[1] * 1000 >= start) return 'active';
+        if (observed && observed.length > 2) complete = false;
+    }
+    return complete ? 'inactive' : 'unknown';
+}
+
+function getParameterCapability(feature, parameterKey) {
+    const properties = feature?.properties;
+    const hourlyKey = ['Tmin_hour', 'Tmax_hour'].includes(parameterKey) ? 'Ta' : parameterKey;
+    const currentValue = properties?.Hourly?.[currentHourStr]?.[hourlyKey];
+    if (getRoundedNumericValue(currentValue) !== null ||
+        getRoundedNumericValue(properties?.[parameterKey]) !== null) return true;
+    if (!stationActivityIndex?.parameters) return null;
+    const first = stationActivityIndex.parameters[String(properties?.Station_id)] || {};
+    const keys = parameterKey === 'Precip_24h' ? ['Precip_24h', 'Precip'] : [hourlyKey];
+    const end = Date.parse(`${meteorologicalDate}T06:00:00Z`) / 1000;
+    return keys.some(key => Number.isFinite(first[key]) && first[key] <= end);
+}
+
+function getMarkerStatus(feature, parameterKey) {
+    if (parameterKey && getParameterCapability(feature, parameterKey) === false) return 'unsupported';
+    const activity = getStationActivity(feature);
+    if (activity === 'inactive' || (activity === 'unknown' && feature?.properties?.Status === 'CLOSED')) return 'closed';
+    const effectiveParameter = parameterKey || ['Ta', 'Precip', 'Wind_avg', 'Wind_max']
+        .find(key => getParameterCapability(feature, key) === true);
+    if (!effectiveParameter) return activity === 'active' ? 'active' : 'incomplete';
+    const capability = getParameterCapability(feature, effectiveParameter);
+    if (capability === false) return 'unsupported';
+    if (feature?.properties?.Activity_check_failed) return 'incomplete';
+    const dayFinished = latestMeteorologicalHour === null
+        ? meteorologicalDate !== latestAvailableDate
+        : meteorologicalHourlySlots.length === 25
+            && latestMeteorologicalHour >= Date.parse(meteorologicalHourlySlots[24].utc);
+    const completenessParameter = ['Ta', 'Tmin_hour', 'Tmax_hour'].includes(effectiveParameter)
+        ? 'Ta'
+        : ['Precip', 'Wind_avg', 'Wind_max'].includes(effectiveParameter) ? effectiveParameter : null;
+    if (completenessParameter) {
+        if (!hasAnyMeteorologicalHourlyData(feature, completenessParameter)) {
+            return capability === true && activity === 'active' && dayFinished && previousDayStations.has(String(feature?.properties?.Station_id))
+                ? 'missing' : 'incomplete';
+        }
+        if (['Ta', 'Precip', 'Wind_avg'].includes(parameterKey)) {
+            const properties = feature?.properties;
+            const selectedValue = properties?.Hourly
+                ? properties.Hourly[currentHourStr]?.[parameterKey]
+                : parameterKey === 'Ta' ? properties?.Ta : parameterKey === 'Precip' ? properties?.Precip_10min : null;
+            if (getRoundedNumericValue(selectedValue) === null) return 'incomplete';
+        }
+        return hasCompleteHourlyData(feature, completenessParameter) ? 'active' : 'incomplete';
+    }
+    const parameterValue = parameterKey === 'Tg'
+        ? getFreshGroundTemperature(feature?.properties)
+        : feature?.properties?.[parameterKey];
+    if (parameterKey && getRoundedNumericValue(parameterValue) === null) {
+        return capability === true && activity === 'active' && dayFinished ? 'missing' : 'incomplete';
+    }
+    return 'active';
 }
 
 function getMarkerStyle(feature, parameterKey) {
-    const completenessParameter = ['Ta', 'Tmin_hour', 'Tmax_hour'].includes(parameterKey)
-        ? 'Ta'
-        : ['Precip', 'Wind_avg', 'Wind_max'].includes(parameterKey) ? parameterKey : null;
-    const hasIncompleteHourlyData = completenessParameter !== null
-        && !hasCompleteHourlyData(feature, completenessParameter);
-
+    const colors = { active: '#2ecc71', incomplete: '#ffff00', missing: '#e74c3c', closed: '#b0b0b0' };
     return {
         radius: 3,
-        fillColor: hasIncompleteHourlyData ? '#ffff00' : '#2ecc71',
+        fillColor: colors[getMarkerStatus(feature, parameterKey)],
         color: '#000',
         weight: 1,
         opacity: 1,
@@ -364,12 +470,15 @@ function keepPopupWithinMap(popup) {
 
 function addDataToParamGroup(rawValue, suffix, className, positionClass, latlng, popupContent, feature, group, isElevation = false, extremeType = '', parameterKey = '', missingCurrentValue = false) {
     const decimals = isElevation ? 0 : 1;
+    missingCurrentValue = missingCurrentValue || (parameterKey !== '' && getRoundedNumericValue(rawValue) === null);
     const formatted = missingCurrentValue ? 'b.d.' : formatValue(rawValue, decimals);
-    if (formatted !== null) {
+    const status = getMarkerStatus(feature, parameterKey);
+    if ((formatted !== null || status === 'closed') && visibleStationStatuses[status]) {
         const markerStyle = getMarkerStyle(feature, parameterKey);
-        if (missingCurrentValue) markerStyle.fillColor = '#e74c3c';
         const marker = L.circleMarker(latlng, markerStyle);
-        marker.bindPopup(popupContent, {
+        const statusNames = { active: 'Aktywna', incomplete: 'Niepełne dane', missing: 'Brak danych', closed: 'Nieczynna / zamknięta' };
+        marker.bindPopup(popupContent.replace('__STATION_STATUS__',
+            `<span style="color:${markerStyle.fillColor}; font-weight:bold;">${statusNames[status]}</span>`), {
             autoPan: false,
             maxWidth: Math.min(520, Math.max(160, map.getSize().x - 24)),
             maxHeight: Math.min(320, Math.max(120, map.getSize().y - 24)),
@@ -382,6 +491,9 @@ function addDataToParamGroup(rawValue, suffix, className, positionClass, latlng,
             }
             requestAnimationFrame(() => keepPopupWithinMap(event.popup));
         });
+        group.addLayer(marker);
+        if (status === 'closed' || status === 'missing'
+            || (missingCurrentValue && ['Ta', 'Precip', 'Wind_avg'].includes(parameterKey))) return;
         const direction = positionClass === 'etykieta-dol' ? 'bottom' : 'top';
 
         let extraClass = '';
@@ -420,7 +532,6 @@ function addDataToParamGroup(rawValue, suffix, className, positionClass, latlng,
                 setStationLabelHighlight(element, hoveredRankingStationId === stationId);
             });
         }
-        group.addLayer(marker);
         group.addLayer(lbl);
     }
 }
@@ -550,6 +661,9 @@ function processData(data, selectedHour, dateStr, previousData) {
             .filter(feature => feature?.properties?.Station_id != null)
             .map(feature => [String(feature.properties.Station_id), feature.properties])
     );
+    latestMeteorologicalHour = dateStr === latestAvailableDate
+        ? getLatestMeteorologicalHourlyData(data, previousData, dateStr)
+        : null;
     const hourSlider = document.getElementById('hourSlider');
     const hour = Number.isInteger(selectedHour) && selectedHour >= 0 && selectedHour <= 23
         ? selectedHour
@@ -617,8 +731,6 @@ function renderDataForHour(hourStr) {
     L.geoJSON(globalGeoJsonData, {
         pointToLayer: function (feature, latlng) {
             const props = feature.properties;
-            if (props.Status !== 'ACTIVE') return null;
-
             const hourlyWindAvg = props.Hourly?.[hourStr]?.Wind_avg;
             const wAvgKmh = convertMetersPerSecondToKilometersPerHour(hourlyWindAvg), wMaxKmh = convertMetersPerSecondToKilometersPerHour(props.Wind_max);
             
@@ -642,7 +754,7 @@ function renderDataForHour(hourStr) {
                   fWindMax = formatValue(wMaxKmh, 1), 
                   fElevation = formatValue(props.Elevation, 0);
 
-            let popupContent = `<h3>${props.Station_name || 'Stacja pomiarowa'}</h3><hr><p><strong>ID:</strong> ${props.Station_id}</p><p><strong>Status:</strong> <span style="color:#2ecc71; font-weight:bold;">Aktywna</span></p>`;
+            let popupContent = `<h3>${props.Station_name || 'Stacja pomiarowa'}</h3><hr><p><strong>ID:</strong> ${props.Station_id}</p><p><strong>Status:</strong> __STATION_STATUS__</p>`;
             popupContent += formatStationPopupValue('Wysokość', fElevation, ' m n.p.m.');
             popupContent += formatStationPopupValue('Temperatura aktualna', fTa, '°C');
             popupContent += formatStationPopupValue(`Opad godzinowy (${hourStr}:00)`, fPrecip10min, ' mm');
@@ -672,21 +784,17 @@ function renderDataForHour(hourStr) {
 
             if (getRoundedNumericValue(hourlyTa) !== null) {
                 addDataToParamGroup(hourlyTa, '°C', 'temp-aktualna', 'etykieta-gora', latlng, popupContent, feature, etykietyTa, false, getEx(hourlyTa, 'Ta'), 'Ta');
-            } else if (hasAnyMeteorologicalHourlyData(feature, 'Ta')) {
+            } else {
                 addDataToParamGroup(null, '', 'temp-aktualna', 'etykieta-gora', latlng, popupContent, feature, etykietyTa, false, '', 'Ta', true);
             }
-            addDataToParamGroup(props.Tmin, '°C', 'temp-min', 'etykieta-dol', latlng, popupContent, feature, etykietyTmin, false, getEx(props.Tmin, 'Tmin'));
+            addDataToParamGroup(props.Tmin, '°C', 'temp-min', 'etykieta-dol', latlng, popupContent, feature, etykietyTmin, false, getEx(props.Tmin, 'Tmin'), 'Tmin');
             addDataToParamGroup(props.Tmin_hour, '°C', 'temp-min-hour', 'etykieta-dol', latlng, popupContent, feature, etykietyTminHour, false, getEx(props.Tmin_hour, 'Tmin_hour'), 'Tmin_hour');
-            addDataToParamGroup(props.Tmax, '°C', 'temp-max', 'etykieta-gora', latlng, popupContent, feature, etykietyTmax, false, getEx(props.Tmax, 'Tmax'));
+            addDataToParamGroup(props.Tmax, '°C', 'temp-max', 'etykieta-gora', latlng, popupContent, feature, etykietyTmax, false, getEx(props.Tmax, 'Tmax'), 'Tmax');
             addDataToParamGroup(props.Tmax_hour, '°C', 'temp-max-hour', 'etykieta-gora', latlng, popupContent, feature, etykietyTmaxHour, false, getEx(props.Tmax_hour, 'Tmax_hour'), 'Tmax_hour');
-            addDataToParamGroup(groundTemp, '°C', 'temp-grunt', 'etykieta-gora', latlng, popupContent, feature, etykietyTg, false, getEx(groundTemp, 'Tg'));
-            addDataToParamGroup(props.Precip_24h, ' mm', 'opad-dobowy', 'etykieta-gora', latlng, popupContent, feature, etykietyOpady24h, false, getEx(props.Precip_24h, 'Precip_24h'));
+            addDataToParamGroup(groundTemp, '°C', 'temp-grunt', 'etykieta-gora', latlng, popupContent, feature, etykietyTg, false, getEx(groundTemp, 'Tg'), 'Tg');
+            addDataToParamGroup(props.Precip_24h, ' mm', 'opad-dobowy', 'etykieta-gora', latlng, popupContent, feature, etykietyOpady24h, false, getEx(props.Precip_24h, 'Precip_24h'), 'Precip_24h');
             
-            if (hourlyPrecip !== null) {
-                addDataToParamGroup(hourlyPrecip, ' mm', 'opad-10min', 'etykieta-gora', latlng, popupContent, feature, etykietyOpady10min, false, getEx(hourlyPrecip, 'Precip_10min'), 'Precip');
-            } else {
-                addDataToParamGroup(props.Precip_10min, ' mm', 'opad-10min', 'etykieta-gora', latlng, popupContent, feature, etykietyOpady10min, false, getEx(props.Precip_10min, 'Precip_10min'), 'Precip');
-            }
+            addDataToParamGroup(hourlyPrecip, ' mm', 'opad-10min', 'etykieta-gora', latlng, popupContent, feature, etykietyOpady10min, false, getEx(hourlyPrecip, 'Precip_10min'), 'Precip');
 
             addDataToParamGroup(wAvgKmh, ' km/h', 'wiatr-avg', 'etykieta-gora', latlng, popupContent, feature, etykietyWindAvg, false, getEx(wAvgKmh, 'Wind_avg'), 'Wind_avg');
             addDataToParamGroup(wMaxKmh, ' km/h', 'wiatr-max', 'etykieta-gora', latlng, popupContent, feature, etykietyWindMax, false, getEx(wMaxKmh, 'Wind_max'), 'Wind_max');
@@ -750,6 +858,15 @@ function formatStationChartHour(hour) {
     return `${String(hourPart).padStart(2, '0')}:${String(minutePart).padStart(2, '0')}`;
 }
 
+function getStationChartRange(groupSeries) {
+    const values = groupSeries.flatMap(item => item.chartData.points.map(point => point.value));
+    if (!values.length || values.some(value => !Number.isFinite(value))) return null;
+    const min = Math.floor(Math.min(...values) - 3);
+    const max = Math.ceil(Math.max(...values) + 3);
+    return Number.isSafeInteger(min) && Number.isSafeInteger(max) && Number.isSafeInteger(max - min)
+        ? { min, max } : null;
+}
+
 function renderStationChart(series) {
     if (!series.length) return '';
 
@@ -762,10 +879,6 @@ function renderStationChart(series) {
     const plotWidth = width - left - right;
     const plotHeight = height - top - bottom;
     const xForHour = hour => left + (hour / 23) * plotWidth;
-    const yForValue = (value, parameter) => {
-        const clampedValue = Math.min(parameter.yMax, Math.max(parameter.yMin, value));
-        return top + ((parameter.yMax - clampedValue) / (parameter.yMax - parameter.yMin)) * plotHeight;
-    };
     const xTicks = Array.from({ length: 24 }, (_, hour) => hour);
     const hourGrid = xTicks.map(hour => {
         const x = xForHour(hour);
@@ -776,23 +889,31 @@ function renderStationChart(series) {
         return `<text x="${x}" y="${height - 8}" class="station-chart-x-label" text-anchor="middle">${formatStationChartHour(hour)}</text>`;
     }).join('');
     const charts = [
-        { unit: '°C', title: 'Temperatura aktualna', labelStep: 5 },
-        { unit: 'mm', title: 'Opad godzinowy', labelStep: 5 },
-        { unit: 'km/h', title: 'Wiatr godzinowy', labelStep: 20 }
-    ].map(group => {
+        { unit: '°C', title: 'Temperatura aktualna' },
+        { unit: 'mm', title: 'Opad godzinowy' },
+        { unit: 'km/h', title: 'Wiatr godzinowy' }
+    ].map((group, groupIndex) => {
         const groupSeries = series.filter(item => item.parameter.unit === group.unit);
         if (!groupSeries.length) return '';
-        const axisParameter = groupSeries[0].parameter;
-        const ticks = [];
-        for (let value = axisParameter.yMin; value <= axisParameter.yMax; value += 5) ticks.push(value);
-        const grid = ticks.map(value => {
-            const y = yForValue(value, axisParameter);
-            return `<line x1="${left}" y1="${y}" x2="${width - right}" y2="${y}" class="station-chart-gridline"/>`;
-        }).join('');
-        const axisLabels = ticks.filter(value => value % group.labelStep === 0).map(value => {
-            const y = yForValue(value, axisParameter);
-            return `<text x="${left - 7}" y="${y + 4}" class="station-chart-y-label" text-anchor="end">${value.toFixed(1)}</text>`;
-        }).join('');
+        const range = getStationChartRange(groupSeries);
+        const title = `${group.title} [${group.unit}]`;
+        if (!range) return `<section class="station-chart-group"><div class="station-chart-title"><strong>${escapeHtml(title)}</strong></div><p class="station-charts-empty">Nie można wyświetlić zakresu danych na wykresie.</p></section>`;
+        const yForValue = value => top + ((range.max - value) / (range.max - range.min)) * plotHeight;
+        const unitHeight = plotHeight / (range.max - range.min);
+        const firstMajorOffset = ((range.max % 5) + 5) % 5;
+        const patternId = `station-chart-grid-${groupIndex}`;
+        const minorLines = [1, 2, 3, 4].map(step =>
+            `<line x1="0" y1="${step * unitHeight}" x2="${plotWidth}" y2="${step * unitHeight}" class="station-chart-gridline-minor"/>`
+        ).join('');
+        const grid = `<defs><pattern id="${patternId}" x="${left}" y="${top + firstMajorOffset * unitHeight}" width="${plotWidth}" height="${5 * unitHeight}" patternUnits="userSpaceOnUse">
+            <line x1="0" y1="0" x2="${plotWidth}" y2="0" class="station-chart-gridline"/>${minorLines}
+        </pattern></defs><rect x="${left}" y="${top}" width="${plotWidth}" height="${plotHeight}" fill="url(#${patternId})"/>`;
+        const labelStep = unitHeight >= 18 ? 1 : Math.max(5, Math.ceil(18 / unitHeight / 5) * 5);
+        const axisLabels = [];
+        for (let value = Math.ceil(range.min / labelStep) * labelStep; value <= range.max; value += labelStep) {
+            const y = yForValue(value);
+            axisLabels.push(`<text x="${left - 7}" y="${y + 4}" class="station-chart-y-label" text-anchor="end">${value.toFixed(1)}</text>`);
+        }
         const labelPositions = new Map();
         const plottedSeries = groupSeries.map(({ parameter, chartData }) => {
             const points = chartData.points;
@@ -807,23 +928,17 @@ function renderStationChart(series) {
             });
             const lines = segments
                 .filter(segment => segment.length > 1)
-                .map(segment => `<polyline points="${segment.map(point => `${xForHour(point.hour)},${yForValue(point.value, parameter)}`).join(' ')}" class="station-chart-line" style="stroke:${parameter.color}"/>`)
+                .map(segment => `<polyline points="${segment.map(point => `${xForHour(point.hour)},${yForValue(point.value)}`).join(' ')}" class="station-chart-line" style="stroke:${parameter.color}"/>`)
                 .join('');
             const markers = points.map(point => {
                 const x = xForHour(point.hour);
-                const y = yForValue(point.value, parameter);
+                const y = yForValue(point.value);
                 const title = `${escapeHtml(parameter.label)} ${formatStationChartHour(point.hour)}: ${point.value.toFixed(1)} ${escapeHtml(parameter.unit)}`;
-                if (point.value > parameter.yMax) {
-                    return `<polygon points="${x},${y - 6} ${x - 5},${y + 4} ${x + 5},${y + 4}" class="station-chart-point station-chart-point-out-of-range" style="fill:${parameter.color}"><title>${title}</title></polygon>`;
-                }
-                if (point.value < parameter.yMin) {
-                    return `<polygon points="${x},${y + 6} ${x - 5},${y - 4} ${x + 5},${y - 4}" class="station-chart-point station-chart-point-out-of-range" style="fill:${parameter.color}"><title>${title}</title></polygon>`;
-                }
                 return `<circle cx="${x}" cy="${y}" r="3.5" class="station-chart-point" style="fill:${parameter.color}"><title>${title}</title></circle>`;
             }).join('');
             const labels = points.map(point => {
                 const x = xForHour(point.hour);
-                let labelY = yForValue(point.value, parameter) - 10;
+                let labelY = yForValue(point.value) - 10;
                 const occupied = labelPositions.get(point.hour) || [];
                 while (occupied.some(position => Math.abs(position - labelY) < 13)) labelY -= 13;
                 occupied.push(labelY);
@@ -833,11 +948,10 @@ function renderStationChart(series) {
             }).join('');
             return { lines, markers, labels };
         });
-        const title = `${group.title} [${group.unit}]`;
         return `<section class="station-chart-group">
             <div class="station-chart-title"><strong>${escapeHtml(title)}</strong></div>
             <div class="station-chart-plot"><svg class="station-chart-svg" viewBox="0 0 ${width} ${height}" role="img" aria-label="${escapeHtml(title)}">
-                ${hourGrid}${grid}${axisLabels}
+                ${hourGrid}${grid}${axisLabels.join('')}
                 <line x1="${left}" y1="${top + plotHeight}" x2="${width - right}" y2="${top + plotHeight}" class="station-chart-axis"/>
                 ${plottedSeries.map(item => item.lines).join('')}
                 ${plottedSeries.map(item => item.markers).join('')}
@@ -1242,11 +1356,28 @@ function loadDataForDate(dateStr, selectedHour) {
     const previousData = fetchData(previousPath)
         .then(data => ({ data, error: null }))
         .catch(error => ({ data: null, error }));
-    Promise.all([fetchData(path), previousData])
-        .then(([data, previous]) => {
+    if (!stationActivityRequest) {
+        stationActivityRequest = fetchData('imgw_data/station_activity.json').then(index => {
+            if (index?.version !== 3 || !index.days || typeof index.days !== 'object' ||
+                !index.parameters || typeof index.parameters !== 'object') {
+                throw new Error('Nieprawidłowy indeks aktywności stacji.');
+            }
+            return index;
+        }).catch(error => {
+            console.error('Nie udało się wczytać historii aktywności stacji:', error);
+            return null;
+        });
+    }
+    Promise.all([fetchData(path), previousData, stationActivityRequest])
+        .then(([data, previous, activityIndex]) => {
             if (request !== dateLoadRequest) return;
+            stationActivityIndex = activityIndex;
             if (previous.error) console.warn('Nie udało się wczytać danych poprzedniego dnia:', previousPath, previous.error);
             processData(data, selectedHour, dateStr, previous.data);
+            const historyWarning = document.getElementById('station-history-warning');
+            const incompleteHistory = !activityIndex || data.features.some(feature =>
+                feature?.geometry && (feature?.properties?.Activity_check_failed || getStationActivity(feature) === 'unknown'));
+            if (historyWarning) historyWarning.hidden = !incompleteHistory;
             const currentTimeLabel = document.getElementById('currentTimeLabel');
             const span = currentTimeLabel ? currentTimeLabel.querySelector('span') : null;
             if (span) span.style.color = '#2ecc71';
@@ -1254,8 +1385,13 @@ function loadDataForDate(dateStr, selectedHour) {
             if (datePicker) {
                 datePicker.setCustomValidity('');
                 const warnings = [];
+                if (incompleteHistory) warnings.push('Historia aktywności części stacji jest niepełna; ich status może być niepotwierdzony.');
                 if (previous.error) {
                     warnings.push(`Nie udało się wczytać danych z ${previousDate}; kompletność doby jest niepotwierdzona.`);
+                }
+                const end = Date.parse(meteorologicalHourlySlots[meteorologicalHourlySlots.length - 1].utc);
+                if (latestMeteorologicalHour !== null && latestMeteorologicalHour < end) {
+                    warnings.push('Kompletność sprawdzono do ostatnich dostępnych pomiarów; późniejsze godziny nie zostały ocenione.');
                 }
                 const repeatedSlots = meteorologicalHourlySlots.filter(slot => slot.repeated);
                 if (repeatedSlots.length && data.features.some(feature => {
@@ -1280,6 +1416,32 @@ function loadDataForDate(dateStr, selectedHour) {
             console.error('Could not load', path, err);
             showNoDataState(dateStr);
         });
+}
+
+function buildStationStatusControl() {
+    const control = L.control({ position: 'bottomleft' });
+    control.onAdd = function () {
+        const div = L.DomUtil.create('div', 'leaflet-control station-status-control');
+        const statuses = [
+            ['active', '#2ecc71', 'Stacje aktywne'],
+            ['incomplete', '#ffff00', 'Stacje z niepełnymi danymi'],
+            ['missing', '#e74c3c', 'Stacje z brakiem danych'],
+            ['closed', '#b0b0b0', 'Stacje nieczynne / zamknięte']
+        ];
+        div.innerHTML = `<strong>Status stacji</strong>${statuses.map(([key, color, label]) =>
+            `<label><input type="checkbox" data-station-status="${key}" checked><span class="station-status-dot" style="background:${color}"></span>${label}</label>`
+        ).join('')}<small id="station-history-warning" hidden>Niepełna historia aktywności części stacji.</small>`;
+        div.querySelectorAll('input[data-station-status]').forEach(input => {
+            input.addEventListener('change', () => {
+                visibleStationStatuses[input.dataset.stationStatus] = input.checked;
+                renderDataForHour(currentHourStr);
+            });
+        });
+        L.DomEvent.disableClickPropagation(div);
+        L.DomEvent.disableScrollPropagation(div);
+        return div;
+    };
+    control.addTo(map);
 }
 
 function buildUnifiedLayerControl() {
@@ -1725,6 +1887,7 @@ function initTimelineUI() {
     }
 
     buildUnifiedLayerControl();
+    buildStationStatusControl();
     buildRankingsControl();
 
     if (datePicker) {
@@ -1735,6 +1898,10 @@ function initTimelineUI() {
             .then(dates => {
                 if (Array.isArray(dates)) {
                     availableDates = dates;
+                    latestAvailableDate = dates.reduce((latest, date) =>
+                        typeof date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(date) && (!latest || date > latest)
+                            ? date
+                            : latest, null);
                 }
                 setDatePickerValue(todayStr);
                 loadDataForDate(todayStr);

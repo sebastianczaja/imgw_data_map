@@ -307,6 +307,11 @@
             stroke: var(--header-border, rgba(26, 37, 47, 0.14));
             stroke-width: 1;
         }
+        .station-chart-gridline-minor {
+            stroke: var(--header-border, rgba(26, 37, 47, 0.14));
+            stroke-width: 0.5;
+            opacity: 0.55;
+        }
         .station-chart-hour-gridline {
             stroke: var(--header-border, rgba(26, 37, 47, 0.14));
             stroke-width: 0.7;
@@ -1068,6 +1073,35 @@
             top: auto !important;
             bottom: 0 !important;
         }
+        .leaflet-bottom.leaflet-left .station-status-control {
+            margin: 0 0 0 268px !important;
+            padding: 8px 10px;
+            border-radius: 6px;
+            box-shadow: 0 2px 6px var(--shadow);
+            background: var(--panel-bg);
+            color: var(--text-main);
+            font-size: 11px;
+        }
+        .station-status-control label {
+            display: flex;
+            align-items: center;
+            gap: 5px;
+            white-space: nowrap;
+            margin-top: 3px;
+        }
+        .station-status-control .station-status-dot {
+            width: 8px;
+            height: 8px;
+            border: 1px solid #000;
+            border-radius: 50%;
+            flex: none;
+        }
+        .station-status-control small {
+            display: block;
+            max-width: 190px;
+            margin-top: 5px;
+        }
+        .station-status-control small[hidden] { display: none; }
         #map .leaflet-control-attribution {
             position: fixed;
             top: 0;

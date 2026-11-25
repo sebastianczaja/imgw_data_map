@@ -11,6 +11,31 @@ from hourly_utc import merge_utc_readings
 
 
 class MeteorologicalDayTests(unittest.TestCase):
+    def test_frost_station_requires_matching_coordinates_even_for_one_result(self):
+        source = {"lon": "19.215", "lat": "50.572778", "temp_min_2m": "0.8", "temp_max_2m": "10.7"}
+        self.assertIsNone(imgw_data.find_przymrozek([source], 15.983056, 50.9325))
+        self.assertIs(imgw_data.find_przymrozek([source], 19.215, 50.572778), source)
+        self.assertIsNone(imgw_data.find_przymrozek([source], None, None))
+        self.assertIsNone(imgw_data.find_przymrozek([{"lon": None, "lat": None}], 19.215, 50.572778))
+        self.assertIsNone(imgw_data.find_przymrozek([source, dict(source)], 19.215, 50.572778))
+
+    def test_frost_matching_distinguishes_stations_without_changing_hourly_extrema(self):
+        first = {"lon": "15.983056", "lat": "50.9325", "temp_min_2m": "-3", "temp_max_2m": "4"}
+        second = {"lon": "19.215", "lat": "50.572778", "temp_min_2m": "0.8", "temp_max_2m": "10.7"}
+        temperature = {"temperature": [{"date": "2026-10-13T06:00:00Z", "value": 2}]}
+        data = {"MYSLOW": [second, first]}
+        extracted = imgw_data.extract_temperature_data(
+            temperature, data, "MYSLOW", 15.983056, 50.9325, date(2026, 10, 13)
+        )
+        self.assertEqual((extracted.temp_min, extracted.temp_max), (-3, 4))
+        self.assertEqual((extracted.temp_min_h, extracted.temp_max_h), (2, 2))
+        missing = imgw_data.extract_temperature_data(
+            temperature, {"MYSLOW": [second]}, "MYSLOW", 15.983056, 50.9325, date(2026, 10, 13)
+        )
+        self.assertIsNone(missing.temp_min)
+        self.assertIsNone(missing.temp_max)
+        self.assertEqual((missing.temp_min_h, missing.temp_max_h), (2, 2))
+
     def test_target_date_window_ends_on_date_in_summer_and_winter(self):
         warsaw = ZoneInfo("Europe/Warsaw")
         for target_date, expected_local_hour in (

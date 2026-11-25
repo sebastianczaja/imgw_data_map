@@ -65,9 +65,7 @@ def main():
     headers = build_header_map(ws)
 
     id_col = find_column(headers, ["station_id", "stationid", "id"], 1)
-    name_col = find_column(headers, ["name", "station_name", "stationname", "nazwa"], 2)
     coords_col = find_column(headers, ["coords", "coordinates", "geo", "location", "wspolrzedne"], 3)
-    extra_col = find_column(headers, ["notes", "uwagi", "comment", "remarks"], 4)
     status_col = find_column(headers, ["status", "station_status", "stan", "state"], 5)
 
     missing_ids = set(imgw_stations.keys()) - existing_ids
@@ -83,30 +81,28 @@ def main():
             continue
 
         status_value = row[status_col - 1].value if status_col <= len(row) else None
-        if normalize_status(status_value) == "CLOSED":
+        if normalize_status(status_value) == "CLOSED" and not row[coords_col - 1].value:
             closed_rows.append((sid, row))
 
     if not missing_ids and not closed_rows:
-        print("Brak nowych stacji ani zamkniętych stacji do aktywacji.")
+        print("Brak nowych stacji i brakujących współrzędnych zamkniętych stacji.")
         return
 
     backup_file = EXCEL_FILE.replace(".xlsx", "_backup.xlsx")
     shutil.copy(EXCEL_FILE, backup_file)
     print(f"📦 Backup zapisany jako: {backup_file}")
 
-    activated_count = 0
+    updated_count = 0
     for sid, row in closed_rows:
         s = imgw_stations[sid]
+        if s["lon"] is None or s["lat"] is None:
+            continue
         coords_str = f"[{s['lon']}, {s['lat']}]"
 
-        row[id_col - 1].value = sid
-        row[name_col - 1].value = s["name"]
         row[coords_col - 1].value = coords_str
-        row[extra_col - 1].value = None
-        row[status_col - 1].value = "ACTIVE"
 
-        activated_count += 1
-        print(f"{sid} | {s['name']} | {coords_str} -> ACTIVE")
+        updated_count += 1
+        print(f"{sid} | {s['name']} | {coords_str} (status bez zmian)")
 
     added_count = 0
     for sid in sorted(missing_ids, key=lambda x: int(x) if x.isdigit() else x):
@@ -125,7 +121,7 @@ def main():
 
     wb.save(EXCEL_FILE)
 
-    print(f"\n✅ Zaktualizowano {activated_count} zamkniętych stacji.")
+    print(f"\n✅ Uzupełniono współrzędne {updated_count} zamkniętych stacji.")
     print(f"✅ Dodano {added_count} nowych stacji do {EXCEL_FILE}")
     print("📐 Szerokość kolumn została zachowana.")
 

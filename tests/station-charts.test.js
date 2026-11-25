@@ -27,9 +27,9 @@ function getChartData(properties, parameter) {
     return context.getStationChartData(properties, parameter);
 }
 
-const temperature = { key: 'Ta', label: 'Temperatura', unit: '°C', color: '#f00', yMin: -40, yMax: 40 };
-const precipitation = { key: 'Precip_hour', label: 'Opad', unit: 'mm', color: '#00f', yMin: 0, yMax: 30 };
-const wind = { key: 'Wind_avg', label: 'Wiatr', unit: 'km/h', color: '#808', yMin: 0, yMax: 200 };
+const temperature = { key: 'Ta', label: 'Temperatura', unit: '°C', color: '#f00' };
+const precipitation = { key: 'Precip_hour', label: 'Opad', unit: 'mm', color: '#00f' };
+const wind = { key: 'Wind_avg', label: 'Wiatr', unit: 'km/h', color: '#808' };
 
 function renderChart(points, extraSeries = []) {
     const context = vm.createContext({
@@ -169,27 +169,39 @@ test('hourly table shares a time column and aligns selected values and missing h
     assert.match(table, /<th scope="row">23:00<\/th>/);
 });
 
-test('charts use fixed value-axis limits and mark out-of-range readings at the edge', () => {
+test('chart range follows data with at least three units of padding', () => {
+    const context = vm.createContext({});
+    vm.runInContext(functionSource('getStationChartRange', 'renderStationChart'), context);
+    const range = points => context.getStationChartRange([{ chartData: { points } }]);
+    assert.deepEqual({ ...range([{ value: -2.5 }, { value: 4.1 }]) }, { min: -6, max: 8 });
+    assert.deepEqual({ ...range([{ value: 0 }]) }, { min: -3, max: 3 });
+    assert.deepEqual({ ...context.getStationChartRange([
+        { chartData: { points: [{ value: 2.2 }] } },
+        { chartData: { points: [{ value: 17.1 }] } }
+    ]) }, { min: -1, max: 21 });
+    assert.equal(range([{ value: Number.MAX_VALUE }]), null);
+});
+
+test('extreme observations fit within the plot rather than being clipped', () => {
     const html = renderChart([
         { hour: 0, value: 50 },
         { hour: 1, value: -50 }
     ]);
 
-    assert.match(html, />-40\.0<\/text>/);
+    assert.match(html, />-50\.0<\/text>/);
     assert.match(html, />0\.0<\/text>/);
-    assert.match(html, />40\.0<\/text>/);
-    assert.equal((html.match(/station-chart-point-out-of-range/g) || []).length, 2);
+    assert.match(html, />50\.0<\/text>/);
+    assert.doesNotMatch(html, /station-chart-point-out-of-range/);
+    const pointYs = [...html.matchAll(/<circle cx="[^"]+" cy="([^"]+)" r="3.5"/g)]
+        .map(match => Number(match[1]));
+    assert.equal(pointYs.length, 2);
+    assert.ok(pointYs[0] > 60 && pointYs[0] < 283);
+    assert.ok(pointYs[1] > 283 && pointYs[1] < 506);
     assert.match(html, /<th scope="row">00:00<\/th><td>50\.0 °C<\/td>/);
     assert.match(html, /<th scope="row">01:00<\/th><td>-50\.0 °C<\/td>/);
-
-    const labelYs = [...html.matchAll(/<text x="[^"]*" y="([^"]*)" class="station-chart-value-label"/g)]
-        .map(match => Number(match[1]));
-    assert.equal(labelYs.length, 2);
-    assert.ok(labelYs[0] < 60);
-    assert.ok(labelYs[1] < 506);
 });
 
-test('separate plots use five-unit gridlines and keep both wind series together', () => {
+test('plots show one-unit gridlines with heavier lines every five and a shared wind scale', () => {
     const html = renderChart(
         [{ hour: 0, value: 0 }, { hour: 2, value: 40 }],
         [
@@ -204,17 +216,22 @@ test('separate plots use five-unit gridlines and keep both wind series together'
     assert.match(plots[0], /Temperatura aktualna \[°C\]/);
     assert.match(plots[1], /Opad godzinowy \[mm\]/);
     assert.match(plots[2], /Wiatr godzinowy \[km\/h\]/);
-    for (const [index, count, range] of [[0, 17, 80], [1, 7, 30], [2, 41, 200]]) {
+    for (const [index, range] of [[0, 46], [1, 6], [2, 6]]) {
         assert.equal((plots[index].match(/class="station-chart-hour-gridline"/g) || []).length, 24);
-        const gridY = [...plots[index].matchAll(/<line x1="[^"]+" y1="([^"]+)"[^>]+class="station-chart-gridline"/g)]
+        assert.equal((plots[index].match(/class="station-chart-gridline"/g) || []).length, 1);
+        const gridY = [...plots[index].matchAll(/<line x1="[^"]+" y1="([^"]+)"[^>]+class="station-chart-gridline-minor"/g)]
             .map(match => Number(match[1]));
-        assert.equal(gridY.length, count);
-        for (let i = 1; i < gridY.length; i++) {
-            assert.ok(Math.abs((gridY[i - 1] - gridY[i]) - 446 * 5 / range) < 1e-9);
+        assert.equal(gridY.length, 4);
+        for (let i = 0; i < gridY.length; i++) {
+            assert.ok(Math.abs(gridY[i] - (i + 1) * 446 / range) < 1e-9);
         }
+        const height = Number(plots[index].match(/<pattern[^>]+height="([^"]+)"/)[1]);
+        assert.ok(Math.abs(height - 5 * 446 / range) < 1e-9);
     }
-    assert.match(html, />30\.0<\/text>/);
-    assert.match(html, />200\.0<\/text>/);
+    assert.match(plots[1], />12\.0<\/text>/);
+    assert.match(plots[1], />18\.0<\/text>/);
+    assert.match(plots[2], />97\.0<\/text>/);
+    assert.match(plots[2], />103\.0<\/text>/);
     assert.match(html, /<th scope="row">00:00<\/th><td>0\.0 °C<\/td><td>15\.0 mm<\/td><td>100\.0 km\/h<\/td><td>100\.0 km\/h<\/td>/);
     assert.equal((html.match(/<polyline /g) || []).length, 0);
     const labelYs = [...plots[2].matchAll(/<text x="55" y="([^"]*)" class="station-chart-value-label"/g)]

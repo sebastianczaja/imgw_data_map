@@ -40,6 +40,9 @@ jobs:
       if: github.event_name == 'workflow_dispatch' || github.event.schedule == '11 4 * * *'
       run: python backfill_recent_data.py
 
+    - name: Aktualizacja historii aktywności i katalogu stacji
+      run: python station_activity.py --update-catalog
+
     - name: Automatyczny zapis bazy do repozytorium
       run: |
         git config --global user.name "IMGW Data Bot"
@@ -50,7 +53,7 @@ jobs:
         dated_file="imgw_data/${date_str}.geojson"
 
         if [ -f "imgw_data.geojson" ] && [ -f "imgw_data/dates.json" ] && [ -f "$dated_file" ]; then
-          git add imgw_data.geojson imgw_data/dates.json "$dated_file"
+          git add imgw_data.geojson imgw_data/dates.json imgw_data/station_activity.json all_stations.xlsx "$dated_file"
           git add imgw_data/*.geojson
           if ! git diff --cached --quiet; then
             git commit -m "Aktualizacja bazy godzinowej IMGW: $(date +'%Y-%m-%d %H:%M')"
