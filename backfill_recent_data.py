@@ -20,10 +20,17 @@ MAX_WORKERS = 10
 TEMPERATURE_URL_BASE = "https://hydro-back.imgw.pl/station/meteo/data?id="
 
 
-def meteorological_date(timestamp):
+def precipitation_date(timestamp):
     return (
         timestamp.astimezone(timezone.utc) - timedelta(hours=6, microseconds=1)
     ).date().isoformat()
+
+def synoptic_date(timestamp):
+    utc_timestamp = timestamp.astimezone(timezone.utc)
+    return (
+        (utc_timestamp - timedelta(hours=18, microseconds=1)).date()
+        + timedelta(days=1)
+    ).isoformat()
 
 
 def fetch_station_history(station_id, target_dates, utc_dates=(), hours_interval=HOURS_INTERVAL):
@@ -68,7 +75,11 @@ def fetch_station_history(station_id, target_dates, utc_dates=(), hours_interval
 
                     local_timestamp = timestamp.astimezone(LOCAL_TZ)
                     date_key = local_timestamp.date().isoformat()
-                    daily_date = meteorological_date(timestamp)
+                    daily_date = (
+                        synoptic_date(timestamp)
+                        if parameter_key == "Ta"
+                        else precipitation_date(timestamp)
+                    )
                     if date_key not in target_dates and daily_date not in target_dates:
                         continue
 
@@ -81,8 +92,11 @@ def fetch_station_history(station_id, target_dates, utc_dates=(), hours_interval
                         readings.setdefault(date_key, {}).setdefault(hour_key, {})[
                             parameter_key
                         ] = value
-                    if parameter_key == "Precip" and daily_date in target_dates:
-                        daily_precip.setdefault(daily_date, []).append(value)
+                    utc_timestamp = timestamp.astimezone(timezone.utc)
+                    if (parameter_key == "Precip" and daily_date in target_dates
+                            and utc_timestamp.minute == 0 and utc_timestamp.second == 0
+                            and utc_timestamp.microsecond == 0):
+                        daily_precip.setdefault(daily_date, {})[utc_timestamp] = value
 
             wind = payload.get("wind")
             wind_points = {}
@@ -102,20 +116,23 @@ def fetch_station_history(station_id, target_dates, utc_dates=(), hours_interval
                             raise ValueError("API returned a timezone-naive timestamp")
                         local_timestamp = timestamp.astimezone(LOCAL_TZ)
                         date_key = local_timestamp.date().isoformat()
-                        daily_date = meteorological_date(timestamp)
-                        is_meteorological_boundary = (
-                            timestamp.astimezone(timezone.utc).hour == 6
-                            and timestamp.astimezone(timezone.utc).minute == 0
-                            and timestamp.astimezone(timezone.utc).second == 0
-                            and timestamp.astimezone(timezone.utc).microsecond == 0
+                        daily_date = synoptic_date(timestamp)
+                        utc_timestamp = timestamp.astimezone(timezone.utc)
+                        is_synoptic_boundary = (
+                            utc_timestamp.hour == 18
+                            and utc_timestamp.minute == 0
+                            and utc_timestamp.second == 0
+                            and utc_timestamp.microsecond == 0
+                        )
+                        next_synoptic_date = (
+                            (utc_timestamp.date() + timedelta(days=1)).isoformat()
+                            if is_synoptic_boundary
+                            else None
                         )
                         if (
                             date_key not in target_dates
                             and daily_date not in target_dates
-                            and not (
-                                is_meteorological_boundary
-                                and date_key in target_dates
-                            )
+                            and next_synoptic_date not in target_dates
                         ):
                             continue
 
@@ -167,18 +184,20 @@ def fetch_station_history(station_id, target_dates, utc_dates=(), hours_interval
             for source_key, points in wind_points.items():
                 for timestamp, value in points:
                     utc_timestamp = timestamp.astimezone(timezone.utc)
-                    daily_date = meteorological_date(timestamp)
+                    daily_date = synoptic_date(timestamp)
                     if daily_date in target_dates:
                         wind_by_date.setdefault(daily_date, {}).setdefault(
                             source_key, []
                         ).append(value)
                     if (
-                        utc_timestamp.hour == 6
+                        utc_timestamp.hour == 18
                         and utc_timestamp.minute == 0
                         and utc_timestamp.second == 0
                         and utc_timestamp.microsecond == 0
                     ):
-                        boundary_date = utc_timestamp.date().isoformat()
+                        boundary_date = (
+                            utc_timestamp.date() + timedelta(days=1)
+                        ).isoformat()
                         if boundary_date in target_dates:
                             wind_by_date.setdefault(boundary_date, {}).setdefault(
                                 source_key, []
@@ -186,10 +205,11 @@ def fetch_station_history(station_id, target_dates, utc_dates=(), hours_interval
 
             for date_key in target_dates:
                 daily = {}
-                precip_values = daily_precip.get(date_key, [])
+                precip_values = daily_precip.get(date_key, {})
                 if precip_values:
-                    daily["Precip_24h"] = sum(precip_values)
                     daily["Number_of_precip_measurements"] = len(precip_values)
+                    if len(precip_values) == 24:
+                        daily["Precip_24h"] = sum(precip_values.values())
 
                 wind_values = wind_by_date.get(date_key, {})
                 speeds = wind_values.get("velocityTel") or wind_values.get(
@@ -245,15 +265,30 @@ def add_missing_readings(document, station_readings, counts):
                     counts[hour_key][parameter_key] += 1
 
 
-def add_missing_daily_readings(document, station_readings, counts):
+def refresh_daily_readings(document, station_readings, counts, refreshed_station_ids=None):
     for feature in document.get("features", []):
         properties = feature.get("properties", {})
         if properties.get("Status") != "ACTIVE":
             continue
 
-        station_values = station_readings.get(str(properties.get("Station_id")), {})
+        station_id = str(properties.get("Station_id"))
+        station_values = station_readings.get(station_id, {})
+        keep_complete_precipitation = (
+            "Precip_24h" not in station_values
+            and properties.get("Number_of_precip_measurements") == 24
+            and properties.get("Precip_24h") is not None
+        )
+        if refreshed_station_ids and station_id in refreshed_station_ids:
+            for parameter_key in ("Precip_24h", "Number_of_precip_measurements"):
+                if keep_complete_precipitation:
+                    continue
+                if parameter_key not in station_values and parameter_key in properties:
+                    del properties[parameter_key]
+                    counts[parameter_key] = counts.get(parameter_key, 0) + 1
         for parameter_key, value in station_values.items():
-            if properties.get(parameter_key) is None or properties.get(parameter_key) == "":
+            if keep_complete_precipitation and parameter_key == "Number_of_precip_measurements":
+                continue
+            if properties.get(parameter_key) != value:
                 properties[parameter_key] = value
                 counts[parameter_key] = counts.get(parameter_key, 0) + 1
 
@@ -442,10 +477,11 @@ def main():
             if date_key in readings
         }
         if not args.utc_only:
-            add_missing_daily_readings(
+            refresh_daily_readings(
                 document,
                 date_daily_readings,
                 additions_by_date[date_key],
+                set(daily_readings_by_station),
             )
 
     if latest_document is not None:
@@ -459,7 +495,7 @@ def main():
             additions_by_date[today_key],
         )
         if not args.utc_only:
-            add_missing_daily_readings(
+            refresh_daily_readings(
                 latest_document,
                 {
                     station_id: readings[today_key]
@@ -467,6 +503,7 @@ def main():
                     if today_key in readings
                 },
                 additions_by_date[today_key],
+                set(daily_readings_by_station),
             )
 
     changed_dates = [

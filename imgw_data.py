@@ -96,8 +96,8 @@ stations_map = {
     for _, row in stations_df.iterrows()
 }
 
-# Bezpieczny stały interwał (36 godzin) pozwalający pobrać pełny profil dobowy o każdej porze
-hours_interval = 36
+# Ostatnia zakończona doba hydrologiczna może zaczynać się niemal 48 godzin temu.
+hours_interval = 48
 
 async def fetch_przymrozki_json(url):
     try:
@@ -147,22 +147,29 @@ def find_przymrozek(przymrozek_list, lon, lat):
         print(f"Niejednoznaczne dane przymrozków dla współrzędnych {lon}, {lat}.")
     return matches[0] if len(matches) == 1 else None
 
-def get_meteo_day_window():
-    # Doba meteorologiczna IMGW: 08:00-08:00 (lato) / 07:00-07:00 (zima) czasu lokalnego,
-    # czyli stale 06:00-06:00 UTC.
+def get_synoptic_day_window():
+    # Doba synoptyczna: 19:00-19:00 (zima) / 20:00-20:00 (lato) czasu lokalnego.
     now_utc = datetime.now(timezone.utc)
-    start = now_utc.replace(hour=6, minute=0, second=0, microsecond=0)
-    if start > now_utc:
-        start -= timedelta(days=1)
-    return start, start + timedelta(days=1)
+    end = now_utc.replace(hour=18, minute=0, second=0, microsecond=0)
+    if end > now_utc:
+        end -= timedelta(days=1)
+    return end - timedelta(days=1), end
 
-def get_meteo_day_window_for_date(meteo_date):
-    # Data pliku oznacza lokalny dzien, w ktorym konczy sie doba meteorologiczna.
+def get_precipitation_day_window():
+    # Doba opadowa: 07:00-07:00 (zima) / 08:00-08:00 (lato) czasu lokalnego.
+    now_utc = datetime.now(timezone.utc)
+    end = now_utc.replace(hour=6, minute=0, second=0, microsecond=0)
+    if end > now_utc:
+        end -= timedelta(days=1)
+    return end - timedelta(days=1), end
+
+def get_synoptic_day_window_for_date(meteo_date):
+    # Dane synoptyczne dla daty pliku koncza sie o 18:00 UTC tego dnia.
     end = datetime(
         meteo_date.year,
         meteo_date.month,
         meteo_date.day,
-        6,
+        18,
         tzinfo=timezone.utc,
     )
     return end - timedelta(days=1), end
@@ -172,7 +179,7 @@ def extract_wind_data(temperature_data):
     wind = temperature_data.get("wind") if temperature_data else None
     if not isinstance(wind, dict):
         return None, None
-    start, end = get_meteo_day_window()
+    start, end = get_synoptic_day_window()
 
     def values_in_window(key):
         values = []
@@ -193,31 +200,31 @@ def extract_wind_data(temperature_data):
     return (max(gusts) if gusts else None,
             round(sum(speeds) / len(speeds), 1) if speeds else None)
 
-def extract_precip_data(temperature_data):
+def extract_precip_data(temperature_data, precipitation_window=None):
     precip_sum = None
-    all_precips = None
-    if temperature_data and isinstance(temperature_data.get("precip"), list) and len(temperature_data.get("precip")) > 0:
-        valid_precips = []
-        met_start, met_end = get_meteo_day_window()
+    valid_precips = {}
+    if temperature_data and isinstance(temperature_data.get("precip"), list):
+        met_start, met_end = precipitation_window or get_precipitation_day_window()
 
         # Suma opadu: przedział (start, koniec], by pomiar graniczny nie liczył się podwójnie
         for t in temperature_data.get("precip", []):
-            if t["value"] is None or t["date"] is None:
+            if not isinstance(t, dict) or t.get("value") is None or t.get("date") is None:
                 continue
             try:
                 dt_utc = parse_imgw_datetime(t["date"]).astimezone(timezone.utc)
-                if met_start < dt_utc <= met_end:
-                    valid_precips.append(t)
-            except Exception:
+                value = float(t["value"])
+            except (TypeError, ValueError, OverflowError):
                 continue
-        if valid_precips:
-            all_precips = valid_precips
-            precip_sum = sum(t["value"] for t in valid_precips)
-            
+            if (met_start < dt_utc <= met_end and dt_utc.minute == 0
+                    and dt_utc.second == 0 and dt_utc.microsecond == 0 and math.isfinite(value)):
+                valid_precips[dt_utc] = (t, value)
+        if len(valid_precips) == 24:
+            precip_sum = sum(value for _, value in valid_precips.values())
+
     return ExtractedPrecip(
         precip_sum=precip_sum,
-        all_precips=all_precips,
-        all_precip_amount=len(all_precips) if all_precips and isinstance(all_precips, list) else 0
+        all_precips=[row for row, _ in valid_precips.values()],
+        all_precip_amount=len(valid_precips)
     )
 
 def extract_temperature_data(temperature_data, przymrozki_data, station_name, lon, lat, meteo_date):
@@ -249,7 +256,7 @@ def extract_temperature_data(temperature_data, przymrozki_data, station_name, lo
         if valid_temps:
             all_temps = valid_temps
 
-        met_start, met_end = get_meteo_day_window_for_date(meteo_date)
+        met_start, met_end = get_synoptic_day_window_for_date(meteo_date)
         met_temps = []
         for t in temperature_data.get("temperature", []):
             if t.get("value") is None or t.get("date") is None:
@@ -512,7 +519,84 @@ def add_missing_hourly_readings(document, readings_by_station):
                     additions += 1
     return additions
 
-async def process_station(session, data, przymrozki_data, previous_date, previous_day_readings):
+def update_daily_precipitation_readings(document, readings_by_station):
+    updates = 0
+    for feature in document.get("features", []):
+        properties = feature.get("properties", {})
+        station_values = readings_by_station.get(str(properties.get("Station_id")))
+        if not station_values:
+            continue
+        if (station_values.get("Precip_24h") is None
+                and properties.get("Number_of_precip_measurements") == 24
+                and properties.get("Precip_24h") is not None):
+            continue
+        for parameter_key, value in station_values.items():
+            if value is None:
+                if parameter_key in properties:
+                    del properties[parameter_key]
+                    updates += 1
+            elif properties.get(parameter_key) != value:
+                properties[parameter_key] = value
+                updates += 1
+    return updates
+
+def update_archive_file(file_path, features, hourly_readings, daily_readings):
+    if not hourly_readings and not daily_readings:
+        return 0
+    if not os.path.isfile(file_path):
+        if daily_readings:
+            print(f"Nie przypisano opadu: brak pliku archiwum {file_path}.")
+        return 0
+
+    with open(file_path, "r", encoding="utf-8") as source:
+        document = json.load(source)
+    additions = add_missing_hourly_readings(document, hourly_readings)
+    additions += update_daily_precipitation_readings(document, daily_readings)
+    existing_ids = {
+        str(feature.get("properties", {}).get("Station_id"))
+        for feature in document.get("features", [])
+    }
+    for feature in features:
+        properties = feature.get("properties", {})
+        station_id = str(properties.get("Station_id"))
+        station_hourly = hourly_readings.get(station_id)
+        station_daily = daily_readings.get(station_id)
+        has_daily_readings = station_daily and station_daily.get("Number_of_precip_measurements", 0) > 0
+        if station_id in existing_ids or not (station_hourly or has_daily_readings):
+            continue
+
+        previous_properties = {
+            key: properties[key]
+            for key in ("Station_id", "Station_name", "Status", "Elevation")
+            if key in properties
+        }
+        if station_hourly:
+            previous_properties["Hourly"] = station_hourly
+        if station_daily:
+            previous_properties.update({key: value for key, value in station_daily.items() if value is not None})
+        document.setdefault("features", []).append({
+            "type": "Feature",
+            "geometry": feature.get("geometry"),
+            "properties": previous_properties,
+        })
+        existing_ids.add(station_id)
+        additions += 1
+
+    if additions:
+        temporary_path = f"{file_path}.tmp"
+        try:
+            with open(temporary_path, "w", encoding="utf-8") as destination:
+                json.dump(document, destination, ensure_ascii=False, indent=4)
+            os.replace(temporary_path, file_path)
+        finally:
+            if os.path.exists(temporary_path):
+                os.remove(temporary_path)
+    return additions
+
+async def process_station(
+    session, data, przymrozki_data, previous_date, previous_day_readings,
+    previous_day_precipitation, precipitation_window=None
+):
     temperature_url = f"{temperature_url_base}{data['kod_stacji']}&hoursInterval={hours_interval}"
     temperature_data = await fetch_json(session, temperature_url)
     if not isinstance(temperature_data, dict) or not any(
@@ -530,7 +614,12 @@ async def process_station(session, data, przymrozki_data, previous_date, previou
         data["lat"],
         now_local.date(),
     )
-    extracted_precips = extract_precip_data(temperature_data)
+    extracted_precips = extract_precip_data(temperature_data, precipitation_window)
+    if isinstance(temperature_data.get("precip"), list):
+        previous_day_precipitation[str(data["kod_stacji"])] = {
+            "Precip_24h": extracted_precips.precip_sum,
+            "Number_of_precip_measurements": extracted_precips.all_precip_amount,
+        }
     wind_max_day, wind_avg_day = extract_wind_data(temperature_data)
     ground_temp, ground_temp_time = extract_ground_temperature(data)
 
@@ -578,8 +667,6 @@ async def process_station(session, data, przymrozki_data, previous_date, previou
         "Wind_gust_10min_time": data['wiatr_poryw_10min_data'],
         "Precip_10min": float(data['opad_10min']) if data['opad_10min'] else None,
         "Precip_10min_time": data['opad_10min_data'],
-        "Precip_24h": getattr(extracted_precips, 'precip_sum', None) if extracted_precips else None,
-        "Number_of_precip_measurements": getattr(extracted_precips, 'all_precip_amount', None) if extracted_precips else None,
         "Hourly": hourly_data
     }
     properties = {k: v for k, v in raw_properties.items() if v is not None}
@@ -593,7 +680,8 @@ async def process_station(session, data, przymrozki_data, previous_date, previou
     }
 
 async def process_missing_station(
-    session, station_info, przymrozki_data, previous_date, previous_day_readings
+    session, station_info, przymrozki_data, previous_date, previous_day_readings,
+    previous_day_precipitation, precipitation_window=None
 ):
     temperature_url = f"{temperature_url_base}{station_info.get('Station_id')}&hoursInterval={hours_interval}"
     temperature_data = await fetch_json(session, temperature_url)
@@ -613,7 +701,12 @@ async def process_missing_station(
         coordinates[1] if coordinates else None,
         now_local.date(),
     )
-    extracted_precips = extract_precip_data(temperature_data)
+    extracted_precips = extract_precip_data(temperature_data, precipitation_window)
+    if isinstance(temperature_data.get("precip"), list):
+        previous_day_precipitation[str(station_info.get("Station_id"))] = {
+            "Precip_24h": extracted_precips.precip_sum,
+            "Number_of_precip_measurements": extracted_precips.all_precip_amount,
+        }
     wind_max_day, wind_avg_day = extract_wind_data(temperature_data)
     
     hourly_data = build_hourly_data(temperature_data, now_local.date())
@@ -639,8 +732,6 @@ async def process_missing_station(
         "Number_of_measurements": getattr(extracted_temps, 'all_temps_amount', None) if extracted_temps else None,
         "Wind_avg": wind_avg_day,
         "Wind_max": wind_max_day,
-        "Precip_24h": getattr(extracted_precips, 'precip_sum', None) if extracted_precips else None,
-        "Number_of_precip_measurements": getattr(extracted_precips, 'all_precip_amount', None) if extracted_precips else None,
         "Hourly": hourly_data
     }
     properties = {k: v for k, v in raw_properties.items() if v is not None}
@@ -669,10 +760,16 @@ def process_closed_station(station_info):
     }
 
 
-async def check_closed_station(session, station_info, przymrozki_data, previous_date, previous_day_readings, previous_feature=None):
+async def check_closed_station(
+    session, station_info, przymrozki_data, previous_date, previous_day_readings,
+    previous_feature=None, previous_day_precipitation=None, precipitation_window=None
+):
+    if previous_day_precipitation is None:
+        previous_day_precipitation = {}
     try:
         return await process_missing_station(
-            session, station_info, przymrozki_data, previous_date, previous_day_readings
+            session, station_info, przymrozki_data, previous_date, previous_day_readings,
+            previous_day_precipitation, precipitation_window
         )
     except (RuntimeError, ValueError) as error:
         print(f"Nie udało się sprawdzić zamkniętej stacji {station_info['Station_id']}: {error}")
@@ -684,10 +781,17 @@ async def check_closed_station(session, station_info, przymrozki_data, previous_
 async def main():
     previous_date = now_local.date() - timedelta(days=1)
     previous_date_str = previous_date.isoformat()
+    precipitation_window = get_precipitation_day_window()
+    precipitation_start, _ = precipitation_window
+    precipitation_date_str = precipitation_start.date().isoformat()
     previous_date_path = os.path.join(
         "imgw_data", f"{previous_date_str}.geojson"
     )
+    precipitation_date_path = os.path.join(
+        "imgw_data", f"{precipitation_date_str}.geojson"
+    )
     previous_day_readings = {}
+    previous_day_precipitation = {}
     date_str = f"{year}-{addZero(month)}-{addZero(day)}"
     dated_path = os.path.join("imgw_data", f"{date_str}.geojson")
     previous_features = {}
@@ -731,7 +835,8 @@ async def main():
 
         tasks = [
             process_station(
-                session, data, przymrozki_data, previous_date, previous_day_readings
+                session, data, przymrozki_data, previous_date, previous_day_readings,
+                previous_day_precipitation, precipitation_window
             )
             for data in imgw_data
         ]
@@ -752,6 +857,8 @@ async def main():
                     przymrozki_data,
                     previous_date,
                     previous_day_readings,
+                    previous_day_precipitation,
+                    precipitation_window,
                 )
                 for station in missing_stations
             ]
@@ -769,7 +876,8 @@ async def main():
             closed_tasks = [
                 check_closed_station(
                     session, station, przymrozki_data, previous_date, previous_day_readings,
-                    previous_features.get(str(station["Station_id"]))
+                    previous_features.get(str(station["Station_id"])),
+                    previous_day_precipitation, precipitation_window
                 )
                 for station in closed_stations
             ]
@@ -788,44 +896,21 @@ async def main():
         with open(latest_path, "w", encoding="utf-8") as f:
             json.dump(payload, f, ensure_ascii=False, indent=4)
 
-        if previous_day_readings and os.path.isfile(previous_date_path):
-            with open(previous_date_path, "r", encoding="utf-8") as f:
-                previous_payload = json.load(f)
-            additions = add_missing_hourly_readings(
-                previous_payload, previous_day_readings
+        archive_updates = {}
+        for archive_path, hourly, daily in (
+            (previous_date_path, previous_day_readings, {}),
+            (precipitation_date_path, {}, previous_day_precipitation),
+        ):
+            update = archive_updates.setdefault(archive_path, {"hourly": {}, "daily": {}})
+            update["hourly"].update(hourly)
+            update["daily"].update(daily)
+
+        for archive_path, update in archive_updates.items():
+            additions = update_archive_file(
+                archive_path, features, update["hourly"], update["daily"]
             )
-            previous_ids = {
-                str(feature.get("properties", {}).get("Station_id"))
-                for feature in previous_payload.get("features", [])
-            }
-            for feature in features:
-                properties = feature["properties"]
-                station_id = str(properties.get("Station_id"))
-                if station_id in previous_ids or station_id not in previous_day_readings:
-                    continue
-                previous_properties = {
-                    key: properties[key] for key in ("Station_id", "Station_name", "Status", "Elevation")
-                    if key in properties
-                }
-                previous_properties["Hourly"] = previous_day_readings[station_id]
-                previous_payload["features"].append({
-                    "type": "Feature", "geometry": feature["geometry"], "properties": previous_properties
-                })
-                previous_ids.add(station_id)
-                additions += 1
             if additions:
-                temporary_path = f"{previous_date_path}.tmp"
-                try:
-                    with open(temporary_path, "w", encoding="utf-8") as f:
-                        json.dump(previous_payload, f, ensure_ascii=False, indent=4)
-                    os.replace(temporary_path, previous_date_path)
-                finally:
-                    if os.path.exists(temporary_path):
-                        os.remove(temporary_path)
-                print(
-                    f"Uzupełniono {additions} pomiarów godzinowych "
-                    f"w pliku {previous_date_path}."
-                )
+                print(f"Uzupełniono {additions} pomiarów w pliku {archive_path}.")
 
         dates_file = os.path.join(out_dir, "dates.json")
         dates = []

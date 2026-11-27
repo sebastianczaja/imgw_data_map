@@ -229,6 +229,43 @@ class StationActivityTests(unittest.TestCase):
         self.assertEqual(added, 1)
         self.assertEqual(document["features"][0]["properties"]["Hourly"]["01"]["Ta"], 0)
 
+    def test_completed_precipitation_is_written_to_its_archive_date(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "2026-11-24.geojson"
+            previous = {"type": "FeatureCollection", "features": [
+                {"properties": {"Station_id": "123", "Status": "ACTIVE"}}
+            ]}
+            path.write_text(json.dumps(previous), encoding="utf-8")
+            current_features = [{
+                "geometry": {"type": "Point", "coordinates": [20, 52]},
+                "properties": {
+                    "Station_id": "123", "Station_name": "Test",
+                    "Status": "ACTIVE", "Elevation": 100,
+                },
+            }]
+            additions = imgw_data.update_archive_file(
+                str(path), current_features, {},
+                {"123": {"Precip_24h": 2.4, "Number_of_precip_measurements": 24}},
+            )
+            updated = json.loads(path.read_text(encoding="utf-8"))
+        self.assertEqual(additions, 2)
+        properties = updated["features"][0]["properties"]
+        self.assertEqual(properties["Precip_24h"], 2.4)
+        self.assertEqual(properties["Number_of_precip_measurements"], 24)
+
+    def test_empty_precipitation_does_not_add_a_station_to_an_archive(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "2026-11-24.geojson"
+            path.write_text(json.dumps({"type": "FeatureCollection", "features": []}), encoding="utf-8")
+            current = [{"properties": {"Station_id": "123", "Status": "ACTIVE"}}]
+            updates = imgw_data.update_archive_file(
+                str(path), current, {},
+                {"123": {"Precip_24h": None, "Number_of_precip_measurements": 0}},
+            )
+            updated = json.loads(path.read_text(encoding="utf-8"))
+        self.assertEqual(updates, 0)
+        self.assertEqual(updated["features"], [])
+
     def test_failed_closed_station_check_preserves_existing_data_but_not_coverage(self):
         station = {"Station_id": "123", "Station_name": "Test", "Status": "CLOSED",
                    "Elevation": None, "coordinates": None}

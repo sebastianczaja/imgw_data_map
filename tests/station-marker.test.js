@@ -10,13 +10,17 @@ const functionSource = (name, nextName) => source.slice(
     source.indexOf(`function ${nextName}(`)
 );
 const slotsContext = vm.createContext({});
-vm.runInContext(functionSource('getMeteorologicalHourlySlots', 'getMeteorologicalHourlyValue'), slotsContext);
+vm.runInContext(functionSource('buildHourlySlots', 'getMeteorologicalHourlyValue'), slotsContext);
 
 function station(id, date = '2026-11-22') {
     const current = { Station_id: id, Station_name: id, Status: 'ACTIVE', Tmin_hour: -1, Tmax_hour: 2, Tmin: -2, Tmax: 3, Wind_max: 4, Hourly: {} };
     const previous = { Station_id: id, Hourly: {} };
+    const next = { Station_id: id, Hourly: {} };
+    const previousDate = new Date(Date.parse(`${date}T00:00:00Z`) - 86400000).toISOString().slice(0, 10);
     for (const slot of slotsContext.getMeteorologicalHourlySlots(date)) {
-        const hourly = slot.date === date ? current.Hourly : previous.Hourly;
+        const hourly = slot.date === date
+            ? current.Hourly
+            : slot.date === previousDate ? previous.Hourly : next.Hourly;
         if (!hourly[slot.hour]) hourly[slot.hour] = { Ta: 1, Precip: 0, Wind_avg: 2, Wind_max: 4 };
         if (slot.repeated) {
             hourly[slot.hour].UTC = hourly[slot.hour].UTC || {};
@@ -24,7 +28,14 @@ function station(id, date = '2026-11-22') {
         }
     }
     current.Hourly['12'] = { Ta: 1, Precip: 0, Wind_avg: 2, Wind_max: 4 };
-    return { current, previous };
+    return { current, previous, next };
+}
+
+function retainCurrentDayThroughHour(sample, hour) {
+    for (const hourKey of Object.keys(sample.current.Hourly)) {
+        if (Number(hourKey) > hour) delete sample.current.Hourly[hourKey];
+    }
+    sample.next.Hourly = {};
 }
 
 function renderMarkers(stations, date = '2026-11-22', hour = '12', latestDate = date, options = {}) {
@@ -32,7 +43,8 @@ function renderMarkers(stations, date = '2026-11-22', hour = '12', latestDate = 
     const TestDate = options.now ? class extends Date {
         constructor(...args) { super(...(args.length ? args : [options.now])); }
     } : Date;
-    const end = Date.parse(`${date}T06:00:00Z`);
+    const hourlySlots = slotsContext.getMeteorologicalHourlySlots(date);
+    const end = Date.parse(hourlySlots[hourlySlots.length - 1].utc);
     const days = {};
     for (let offset = 0; offset <= 30; offset++) {
         const day = new Date(end - offset * 86400000).toISOString().slice(0, 10);
@@ -58,12 +70,14 @@ function renderMarkers(stations, date = '2026-11-22', hour = '12', latestDate = 
         globalGeoJsonData: { features: stations.map(item => ({ properties: item.current })) },
         meteorologicalDate: date,
         Date: TestDate,
-        meteorologicalHourlySlots: slotsContext.getMeteorologicalHourlySlots(date),
+        meteorologicalHourlySlots: hourlySlots,
+        synopticHourlySlots: slotsContext.getSynopticHourlySlots(date),
+        precipitationHourlySlots: slotsContext.getHydrologicalHourlySlots(date),
         latestAvailableDate: latestDate,
         latestMeteorologicalHour: null,
         latestMeteorologicalHourByParameter: null,
-        getMeteorologicalHourlySlots: slotsContext.getMeteorologicalHourlySlots,
         previousDayStations: new Map(stations.map(item => [item.current.Station_id, item.previous])),
+        nextDayStations: new Map(stations.map(item => [item.current.Station_id, item.next])),
         stationActivityIndex: options.index
             ? { ...options.index, parameters: options.index.parameters ?? parameters }
             : { days, parameters },
@@ -89,7 +103,7 @@ function renderMarkers(stations, date = '2026-11-22', hour = '12', latestDate = 
         }
     });
     vm.runInContext([
-        functionSource('getLatestMeteorologicalHourlyData', 'getMeteorologicalHourlyValue'),
+        functionSource('buildHourlySlots', 'getMeteorologicalHourlyValue'),
         functionSource('getMeteorologicalHourlyValue', 'hasMeteorologicalHourlyValue'),
         functionSource('hasMeteorologicalHourlyValue', 'hasCompleteHourlyData'),
         functionSource('hasCompleteHourlyData', 'hasAnyMeteorologicalHourlyData'),
@@ -101,12 +115,12 @@ function renderMarkers(stations, date = '2026-11-22', hour = '12', latestDate = 
         functionSource('formatStationPopupValue', 'renderDataForHour'),
         functionSource('renderDataForHour', 'escapeHtml'),
         `latestMeteorologicalHour = latestAvailableDate === meteorologicalDate
-            ? getLatestMeteorologicalHourlyData(globalGeoJsonData, { features: [...previousDayStations.values()].map(properties => ({ properties })) }, meteorologicalDate)
+            ? getLatestMeteorologicalHourlyData(globalGeoJsonData, { features: [...previousDayStations.values()].map(properties => ({ properties })) }, { features: [...nextDayStations.values()].map(properties => ({ properties })) }, meteorologicalDate)
             : null;`,
         `latestMeteorologicalHourByParameter = latestAvailableDate === meteorologicalDate
             ? Object.fromEntries(['Ta', 'Precip', 'Wind_avg', 'Wind_max'].map(parameterKey => [
                 parameterKey,
-                getLatestMeteorologicalHourlyData(globalGeoJsonData, { features: [...previousDayStations.values()].map(properties => ({ properties })) }, meteorologicalDate, parameterKey)
+                getLatestMeteorologicalHourlyData(globalGeoJsonData, { features: [...previousDayStations.values()].map(properties => ({ properties })) }, { features: [...nextDayStations.values()].map(properties => ({ properties })) }, meteorologicalDate, parameterKey)
             ]))
             : null;`,
         `renderDataForHour(${JSON.stringify(hour)});`
@@ -179,27 +193,62 @@ test('meteorological slots include both boundaries in Polish local time', () => 
         ['2026-11-22', '07', '07'],
         ['2026-07-22', '08', '08']
     ]) {
-        const slots = slotsContext.getMeteorologicalHourlySlots(date);
+        const slots = slotsContext.getHydrologicalHourlySlots(date);
         assert.equal(slots.length, 25);
         assert.equal(slots[0].hour, start);
+        assert.equal(slots[0].date, date);
         assert.equal(slots[24].hour, end);
-        assert.equal(slots[24].date, date);
+        const nextDate = new Date(Date.parse(`${date}T00:00:00Z`) + 86400000).toISOString().slice(0, 10);
+        assert.equal(slots[24].date, nextDate);
+
+        const synopticSlots = slotsContext.getSynopticHourlySlots(date);
+        const previousDate = new Date(Date.parse(`${date}T00:00:00Z`) - 86400000).toISOString().slice(0, 10);
+        assert.equal(synopticSlots.length, 25);
+        assert.equal(synopticSlots[0].hour, date === '2026-11-22' ? '19' : '20');
+        assert.equal(synopticSlots[0].date, previousDate);
+        assert.equal(synopticSlots[24].hour, date === '2026-11-22' ? '19' : '20');
+        assert.equal(synopticSlots[24].date, date);
+    }
+});
+
+test('synoptic and hydrological windows use their date-specific hourly parameters', () => {
+    const groupsByParameter = {
+        Ta: ['etykietyTa', 'etykietyTminHour', 'etykietyTmaxHour'],
+        Precip: ['etykietyOpady10min'],
+        Wind_avg: ['etykietyWindAvg'],
+        Wind_max: ['etykietyWindMax']
+    };
+    for (const [parameter, affectedGroups] of Object.entries(groupsByParameter)) {
+        const sample = station(`gap-${parameter}`, '2026-11-25');
+        retainCurrentDayThroughHour(sample, 10);
+        delete sample.current.Hourly['08'][parameter];
+        const markers = renderMarkers([sample], '2026-11-25', '10');
+        for (const group of Object.values(groupsByParameter).flat()) {
+            assert.equal(
+                markers[`gap-${parameter}:${group}`],
+                affectedGroups.includes(group) ? '#ffff00' : '#2ecc71',
+                `${parameter}:${group}`
+            );
+        }
+    }
+
+    const completeToday = station('complete-today', '2026-11-25');
+    retainCurrentDayThroughHour(completeToday, 15);
+    const markers = renderMarkers([completeToday], '2026-11-25', '15');
+    for (const group of Object.values(groupsByParameter).flat()) {
+        assert.equal(markers[`complete-today:${group}`], '#2ecc71', group);
     }
 });
 
 test('a stalled update ignores globally unavailable later hours but still detects earlier gaps', () => {
     const complete = station('complete');
     const gap = station('gap');
-    for (const sample of [complete, gap]) {
-        for (const hour of Object.keys(sample.current.Hourly)) {
-            if (Number(hour) > 3) delete sample.current.Hourly[hour];
-        }
-    }
-    delete gap.current.Hourly['02'].Ta;
-    delete gap.previous.Hourly['22'].Precip;
-    delete gap.current.Hourly['02'].Wind_avg;
-    delete gap.current.Hourly['01'].Wind_max;
-    const markers = renderMarkers([complete, gap], '2026-11-22', '03');
+    for (const sample of [complete, gap]) retainCurrentDayThroughHour(sample, 10);
+    delete gap.current.Hourly['08'].Ta;
+    delete gap.current.Hourly['09'].Precip;
+    delete gap.current.Hourly['08'].Wind_avg;
+    delete gap.current.Hourly['07'].Wind_max;
+    const markers = renderMarkers([complete, gap], '2026-11-22', '10');
     for (const group of ['etykietyTa', 'etykietyTminHour', 'etykietyTmaxHour', 'etykietyOpady10min', 'etykietyWindAvg', 'etykietyWindMax']) {
         assert.equal(markers[`complete:${group}`], '#2ecc71', group);
         assert.equal(markers[`gap:${group}`], '#ffff00', group);
@@ -209,14 +258,8 @@ test('a stalled update ignores globally unavailable later hours but still detect
 test('a station without observations yet stays green before the meteorological day is complete', () => {
     const observed = station('observed');
     const waiting = station('waiting');
-    for (const sample of [observed, waiting]) {
-        for (const hourly of [sample.current.Hourly, sample.previous.Hourly]) {
-            for (const hour of Object.keys(hourly)) {
-                if (Number(hour) > 3) delete hourly[hour];
-            }
-        }
-    }
-    for (const hourly of [waiting.current.Hourly, waiting.previous.Hourly]) {
+    for (const sample of [observed, waiting]) retainCurrentDayThroughHour(sample, 10);
+    for (const hourly of [waiting.previous.Hourly, waiting.current.Hourly, waiting.next.Hourly]) {
         for (const values of Object.values(hourly)) delete values.Ta;
     }
     const markers = renderMarkers([observed, waiting], '2026-11-22', '03');
@@ -229,13 +272,11 @@ test('a later wind observation does not extend the Ta completeness cutoff', () =
     const complete = station('complete');
     const gap = station('gap');
     for (const sample of [complete, gap]) {
-        for (const hour of Object.keys(sample.current.Hourly)) {
-            if (Number(hour) > 4) delete sample.current.Hourly[hour];
-        }
-        sample.current.Hourly['05'] = { Wind_max: 5 };
+        retainCurrentDayThroughHour(sample, 10);
+        sample.current.Hourly['11'] = { Wind_max: 5 };
     }
-    delete gap.previous.Hourly['22'].Ta;
-    const markers = renderMarkers([complete, gap], '2026-11-22', '04');
+    delete gap.current.Hourly['08'].Ta;
+    const markers = renderMarkers([complete, gap], '2026-11-22', '10');
     for (const group of ['etykietyTa', 'etykietyTminHour', 'etykietyTmaxHour']) {
         assert.equal(markers[`complete:${group}`], '#2ecc71', group);
         assert.equal(markers[`gap:${group}`], '#ffff00', group);
@@ -246,12 +287,10 @@ test('data ending at 10:00 do not mark later hours as gaps in the meteorological
     const complete = station('complete');
     const gap = station('gap');
     for (const sample of [complete, gap]) {
-        for (const hour of Object.keys(sample.current.Hourly)) {
-            if (Number(hour) > 10) delete sample.current.Hourly[hour];
-        }
+        retainCurrentDayThroughHour(sample, 10);
         sample.current.Hourly['10'] = { Ta: 1, Precip: 0, Wind_avg: 2, Wind_max: 4 };
     }
-    delete gap.current.Hourly['06'].Ta;
+    delete gap.current.Hourly['08'].Ta;
     const markers = renderMarkers([complete, gap], '2026-11-22', '10');
     assert.equal(markers['complete:etykietyTa'], '#2ecc71');
     assert.equal(markers['gap:etykietyTa'], '#ffff00');
@@ -259,9 +298,7 @@ test('data ending at 10:00 do not mark later hours as gaps in the meteorological
 
 test('past dates still require the complete meteorological day', () => {
     const sample = station('past');
-    for (const hour of Object.keys(sample.current.Hourly)) {
-        if (Number(hour) > 3) delete sample.current.Hourly[hour];
-    }
+    retainCurrentDayThroughHour(sample, 10);
     const markers = renderMarkers([sample], '2026-11-22', '03', '2026-11-23');
     assert.equal(markers['past:etykietyTa'], '#ffff00');
     assert.equal(markers['past:etykietyWindMax'], '#ffff00');
@@ -269,18 +306,16 @@ test('past dates still require the complete meteorological day', () => {
 
 test('later observations after the meteorological boundary expose a missing boundary hour', () => {
     const sample = station('boundary');
-    delete sample.current.Hourly['07'].Ta;
+    delete sample.previous.Hourly['19'].Ta;
     const markers = renderMarkers([sample], '2026-11-22', '12');
     assert.equal(markers['boundary:etykietyTa'], '#ffff00');
 });
 
 test('a later observation of one parameter does not make other parameters incomplete', () => {
     const sample = station('gap');
-    for (const hour of Object.keys(sample.current.Hourly)) {
-        if (Number(hour) > 3) delete sample.current.Hourly[hour];
-    }
-    sample.current.Hourly['03'] = { Precip: 0 };
-    const markers = renderMarkers([sample], '2026-11-22', '02');
+    retainCurrentDayThroughHour(sample, 10);
+    sample.current.Hourly['11'] = { Precip: 0 };
+    const markers = renderMarkers([sample], '2026-11-22', '10');
     assert.equal(markers['gap:etykietyTa'], '#2ecc71');
     assert.equal(markers['gap:etykietyOpady10min'], '#2ecc71');
     assert.equal(markers['gap:etykietyWindAvg'], '#2ecc71');
@@ -291,7 +326,7 @@ test('a stalled update between repeated UTC hours checks only the observed occur
     for (const hour of Object.keys(sample.current.Hourly)) {
         if (Number(hour) > 2) delete sample.current.Hourly[hour];
     }
-    delete sample.current.Hourly['02'].UTC['2026-10-25T01:00:00Z'];
+    delete sample.current.Hourly['02'].UTC['2026-10-25T01:00:00Z'].Ta;
     const markers = renderMarkers([sample], '2026-10-25', '01');
     assert.equal(markers['complete:etykietyTa'], '#2ecc71');
     assert.equal(markers['complete:etykietyWindMax'], '#2ecc71');
@@ -307,12 +342,12 @@ test('UTC metadata alone does not count as an available hourly measurement', () 
     assert.equal(context.getLastAvailableHourFromData(data, 'Ta'), 3);
 });
 
-test('temperature markers include both meteorological boundary readings', () => {
+test('temperature markers include both synoptic boundary readings', () => {
     const complete = station('complete');
     const startGap = station('start-gap');
     const endGap = station('end-gap');
-    delete startGap.previous.Hourly['07'].Ta;
-    delete endGap.current.Hourly['07'].Ta;
+    delete startGap.previous.Hourly['19'].Ta;
+    delete endGap.current.Hourly['19'].Ta;
     const markers = renderMarkers([complete, startGap, endGap]);
 
     for (const group of ['etykietyTa', 'etykietyTminHour', 'etykietyTmaxHour']) {
@@ -324,11 +359,23 @@ test('temperature markers include both meteorological boundary readings', () => 
     assert.equal(markers['start-gap:etykietyTmax'], '#2ecc71');
 });
 
+test('precipitation markers include both hydrological boundary readings', () => {
+    const complete = station('complete');
+    const startGap = station('start-gap');
+    const endGap = station('end-gap');
+    delete startGap.current.Hourly['07'].Precip;
+    delete endGap.next.Hourly['07'].Precip;
+    const markers = renderMarkers([complete, startGap, endGap]);
+    assert.equal(markers['complete:etykietyOpady10min'], '#2ecc71');
+    assert.equal(markers['start-gap:etykietyOpady10min'], '#ffff00');
+    assert.equal(markers['end-gap:etykietyOpady10min'], '#ffff00');
+});
+
 test('precipitation and wind markers check their own hourly series independently', () => {
     const sample = station('gap');
-    delete sample.previous.Hourly['10'].Precip;
-    delete sample.current.Hourly['05'].Wind_avg;
-    delete sample.previous.Hourly['23'].Wind_max;
+    delete sample.current.Hourly['10'].Precip;
+    delete sample.current.Hourly['08'].Wind_avg;
+    delete sample.current.Hourly['08'].Wind_max;
     const complete = station('complete');
     const markers = renderMarkers([sample, complete]);
     for (const group of ['etykietyOpady10min', 'etykietyWindAvg', 'etykietyWindMax']) {
@@ -338,28 +385,29 @@ test('precipitation and wind markers check their own hourly series independently
     assert.equal(markers['gap:etykietyTa'], '#2ecc71');
 });
 
-test('missing previous-day data does not mark meteorological observations as complete', () => {
-    const sample = station('missing-previous');
+test('missing next-day data does not count as complete meteorological observations', () => {
+    const sample = station('missing-next');
     sample.previous.Hourly = {};
-    const markers = renderMarkers([sample]);
+    sample.next.Hourly = {};
+    const markers = renderMarkers([sample], '2026-11-22', '12', '2026-11-23');
     for (const group of ['etykietyTa', 'etykietyTminHour', 'etykietyTmaxHour', 'etykietyOpady10min', 'etykietyWindAvg', 'etykietyWindMax']) {
-        assert.equal(markers[`missing-previous:${group}`], '#ffff00', group);
+        assert.equal(markers[`missing-next:${group}`], '#ffff00', group);
     }
 });
 
-test('missing selected-hour Ta is not yellow without a gap in the meteorological day', () => {
+test('missing selected-hour Ta is yellow when later observations confirm a gap', () => {
     const missing = station('missing');
     delete missing.current.Hourly['12'].Ta;
     delete missing.current.Hourly['12'].Precip;
     delete missing.current.Hourly['12'].Wind_avg;
     missing.current.Precip_10min = 2;
     const noData = station('no-data');
-    for (const hourly of [noData.current.Hourly, noData.previous.Hourly]) {
+    for (const hourly of [noData.previous.Hourly, noData.current.Hourly, noData.next.Hourly]) {
         for (const values of Object.values(hourly)) delete values.Ta;
     }
     const values = {};
     const markers = renderMarkers([missing, noData], '2026-11-22', '12', '2026-11-22', { values });
-    assert.equal(markers['missing:etykietyTa'], '#2ecc71');
+    assert.equal(markers['missing:etykietyTa'], '#ffff00');
     for (const group of ['etykietyOpady10min', 'etykietyWindAvg']) {
         assert.equal(markers[`missing:${group}`], '#ffff00', group);
     }
@@ -368,7 +416,7 @@ test('missing selected-hour Ta is not yellow without a gap in the meteorological
     const filtered = renderMarkers([missing], '2026-11-22', '12', '2026-11-22', {
         visible: { active: true, incomplete: false, missing: true, closed: true }
     });
-    assert.equal(filtered['missing:etykietyTa'], '#2ecc71');
+    assert.equal(filtered['missing:etykietyTa'], undefined);
     assert.equal(filtered['missing:etykietyOpady10min'], undefined);
     assert.equal(filtered['missing:etykietyWindAvg'], undefined);
 });
@@ -378,11 +426,11 @@ test('30-day history determines inactive stations and filters hide each status',
     const incomplete = station('incomplete');
     const missing = station('missing');
     const closed = station('closed');
-    delete incomplete.previous.Hourly['08'].Ta;
-    for (const hourly of [missing.current.Hourly, missing.previous.Hourly]) {
+    delete incomplete.current.Hourly['08'].Ta;
+    for (const hourly of [missing.previous.Hourly, missing.current.Hourly, missing.next.Hourly]) {
         for (const values of Object.values(hourly)) delete values.Ta;
     }
-    const end = Date.parse('2026-11-22T06:00:00Z');
+    const end = Date.parse('2026-11-23T06:00:00Z');
     const days = {};
     for (let offset = 0; offset <= 30; offset++) {
         const day = new Date(end - offset * 86400000).toISOString().slice(0, 10);
@@ -406,7 +454,7 @@ test('30-day history determines inactive stations and filters hide each status',
 
 test('incomplete history never proves a station has been closed', () => {
     const sample = station('unknown');
-    for (const hourly of [sample.current.Hourly, sample.previous.Hourly]) {
+    for (const hourly of [sample.previous.Hourly, sample.current.Hourly, sample.next.Hourly]) {
         for (const values of Object.values(hourly)) delete values.Ta;
     }
     const markers = renderMarkers([sample], '2026-11-22', '12', '2026-11-22', { index: { days: {} } });
@@ -418,11 +466,11 @@ test('parameters never observed in available history are not shown as missing', 
     const formerlyMeasured = station('previously-measured');
     const measuredLater = station('measured-later');
     for (const sample of [rainOnly, formerlyMeasured, measuredLater]) {
-        for (const hourly of [sample.current.Hourly, sample.previous.Hourly]) {
+        for (const hourly of [sample.previous.Hourly, sample.current.Hourly, sample.next.Hourly]) {
             for (const values of Object.values(hourly)) delete values.Ta;
         }
     }
-    const end = Date.parse('2026-11-22T06:00:00Z') / 1000;
+    const end = Date.parse('2026-11-23T06:00:00Z') / 1000;
     const parameters = {
         'rain-only': { Precip: end - 86400 },
         'previously-measured': { Ta: end - 86400, Precip: end - 86400 },
@@ -458,7 +506,7 @@ test('daily Tmin and Tmax require their own measurement history', () => {
         sample.current.Tmax = null;
     }
     current.current.Tmax = 0;
-    const end = Date.parse('2026-11-22T06:00:00Z') / 1000;
+    const end = Date.parse('2026-11-23T06:00:00Z') / 1000;
     const parameters = {
         never: { Ta: end - 86400 },
         'min-only': { Ta: end - 86400, Tmin: end - 86400 },
@@ -467,14 +515,15 @@ test('daily Tmin and Tmax require their own measurement history', () => {
         stale: { Ta: end - 86400 }
     };
     const days = {};
-    for (let offset = 0; offset <= 30; offset++) {
+    for (let offset = 0; offset <= 31; offset++) {
         const day = new Date((end - offset * 86400) * 1000).toISOString().slice(0, 10);
         days[day] = { stations: Object.fromEntries(samples.map(sample => [
             sample.current.Station_id, offset === 1 ? [end - 86400, end - 86400] : null
         ])) };
     }
-    const recentMinDay = new Date((end - 29 * 86400) * 1000).toISOString().slice(0, 10);
-    const staleMinDay = new Date((end - 30 * 86400) * 1000).toISOString().slice(0, 10);
+    const selectedDay = Date.parse('2026-11-22T00:00:00Z') / 1000;
+    const recentMinDay = new Date((selectedDay - 29 * 86400) * 1000).toISOString().slice(0, 10);
+    const staleMinDay = new Date((selectedDay - 30 * 86400) * 1000).toISOString().slice(0, 10);
     days[recentMinDay].parameters = { 'min-only': 16 };
     days[staleMinDay].parameters = { stale: 16 };
     const markers = renderMarkers(samples, '2026-11-22', '12', '2026-11-23', {
@@ -532,8 +581,9 @@ test('inactive stations only appear on parameter layers they have measured', () 
     recordedClosed.current.Status = 'CLOSED';
     const stations = [rainOnly, temperature, unknown, recordedClosed];
     for (const sample of stations) {
-        sample.current.Hourly = {};
         sample.previous.Hourly = {};
+        sample.current.Hourly = {};
+        sample.next.Hourly = {};
         delete sample.current.Tmin_hour;
         delete sample.current.Tmax_hour;
         delete sample.current.Tmin;
@@ -566,15 +616,13 @@ test('inactive stations only appear on parameter layers they have measured', () 
 
 test('a measured value after a missing slot exposes a gap in the current day', () => {
     const sample = station('partial');
-    for (const hourly of [sample.current.Hourly, sample.previous.Hourly]) {
+    for (const hourly of [sample.previous.Hourly, sample.current.Hourly, sample.next.Hourly]) {
         for (const values of Object.values(hourly)) delete values.Ta;
     }
-    for (const hour of Object.keys(sample.current.Hourly)) {
-        if (Number(hour) > 3) delete sample.current.Hourly[hour];
-    }
-    sample.previous.Hourly['22'].Ta = 1;
-    sample.current.Hourly['03'].Ta = 2;
-    const markers = renderMarkers([sample], '2026-11-22', '03');
+    sample.next.Hourly = {};
+    sample.current.Hourly['08'].Ta = 1;
+    sample.current.Hourly['09'].Ta = 2;
+    const markers = renderMarkers([sample], '2026-11-22', '09');
     assert.equal(markers['partial:etykietyTa'], '#ffff00');
 });
 

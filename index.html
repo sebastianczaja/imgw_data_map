@@ -172,9 +172,9 @@
             flex: 0 0 auto;
         }
         #stationChartsDialog {
-            width: min(940px, calc(100vw - 20px));
-            max-width: 940px;
-            max-height: 88vh;
+            width: min(1540px, calc(100vw - 20px));
+            max-width: 1540px;
+            max-height: 96.8vh;
             padding: 0;
             border: 1px solid var(--panel-border);
             border-radius: 10px;
@@ -188,7 +188,7 @@
         .station-charts-shell {
             display: flex;
             flex-direction: column;
-            max-height: 88vh;
+            max-height: 96.8vh;
             min-height: 0;
         }
         .station-charts-header {
@@ -205,6 +205,36 @@
         }
         .station-charts-header p {
             margin: 3px 0 0;
+            color: var(--text-muted);
+            font-size: 11px;
+        }
+        .station-charts-range {
+            display: flex;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 8px 14px;
+            padding: 8px 14px;
+            border-bottom: 1px solid var(--panel-border);
+        }
+        .station-charts-range label {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            color: var(--text-muted);
+            font-size: 11px;
+        }
+        .station-charts-range input {
+            min-width: 142px;
+            padding: 4px 6px;
+            border: 1px solid var(--input-border);
+            border-radius: 4px;
+            background: var(--input-bg);
+            color: var(--text-main);
+            font: inherit;
+        }
+        .station-chart-range-status {
+            flex: 1 1 220px;
+            margin: 0;
             color: var(--text-muted);
             font-size: 11px;
         }
@@ -294,18 +324,32 @@
             margin-top: 12px;
         }
         .station-chart-plot {
+            display: grid;
             overflow-x: auto;
         }
-        .station-chart-svg {
+        .station-chart-svg,
+        .station-chart-y-axis {
+            grid-area: 1 / 1;
             display: block;
-            width: 100%;
-            min-width: 650px;
             height: auto;
             margin-top: 2px;
         }
+        .station-chart-svg {
+            width: 100%;
+            min-width: 0;
+        }
+        .station-chart-y-axis {
+            position: sticky;
+            left: 0;
+            z-index: 1;
+            pointer-events: none;
+        }
+        .station-chart-y-axis-background {
+            fill: var(--panel-bg);
+        }
         .station-chart-gridline {
             stroke: var(--header-border, rgba(26, 37, 47, 0.14));
-            stroke-width: 1;
+            stroke-width: 1.3;
         }
         .station-chart-gridline-minor {
             stroke: var(--header-border, rgba(26, 37, 47, 0.14));
@@ -316,6 +360,21 @@
             stroke: var(--header-border, rgba(26, 37, 47, 0.14));
             stroke-width: 0.7;
             opacity: 0.65;
+        }
+        .station-chart-synoptic-divider {
+            stroke: #9e9e9e;
+            stroke-width: 2;
+        }
+        .station-chart-synoptic-label,
+        .station-chart-hydrological-label {
+            fill: #9e9e9e;
+            font-size: 11px;
+            font-weight: 600;
+            pointer-events: none;
+        }
+        .station-chart-hydrological-divider {
+            stroke: #9e9e9e;
+            stroke-width: 2;
         }
         .station-chart-axis {
             stroke: var(--text-muted);
@@ -328,18 +387,67 @@
             stroke-linecap: round;
         }
         .station-chart-point {
-            stroke: var(--panel-bg-strong);
             stroke-width: 1.5;
+            cursor: help;
         }
         .station-chart-value-label {
-            fill: var(--text-main);
-            font-family: Arial, sans-serif;
-            font-size: 12px;
-            font-weight: 700;
+            font-size: 10px;
             paint-order: stroke;
             stroke: var(--panel-bg);
-            stroke-width: 2px;
             stroke-linejoin: round;
+            stroke-width: 3px;
+            pointer-events: none;
+        }
+        .station-chart-temperature-summary,
+        .station-chart-precipitation-summary,
+        .station-chart-wind-summary {
+            fill: var(--text-main);
+            font-size: 11px;
+            font-weight: 600;
+            paint-order: stroke;
+            stroke: var(--panel-bg);
+            stroke-linejoin: round;
+            stroke-width: 3px;
+        }
+        .station-chart-summary-min {
+            fill: #2878b5;
+        }
+        .station-chart-summary-max {
+            fill: #d64545;
+        }
+        .station-chart-bar {
+            stroke: var(--panel-bg-strong);
+            stroke-width: 0.6;
+            cursor: help;
+        }
+        .station-chart-bar-zero {
+            fill: transparent;
+            pointer-events: all;
+            cursor: help;
+        }
+        .station-chart-period-legend {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 4px 12px;
+            margin: 4px 0 6px;
+            color: var(--text-muted);
+            font-size: 10px;
+        }
+        .station-chart-period-legend span {
+            display: inline-flex;
+            align-items: center;
+            gap: 5px;
+        }
+        .station-chart-period-swatch {
+            width: 14px;
+            height: 0;
+            border-top: 2px solid;
+        }
+        .station-chart-period-synoptic {
+            border-color: #9e9e9e;
+        }
+        .station-chart-period-hydrological {
+            border-color: #9e9e9e;
         }
         .station-chart-table-wrap {
             margin-top: 8px;
@@ -364,6 +472,31 @@
             color: var(--text-muted);
             font-weight: normal;
         }
+        .station-chart-table-maximum,
+        .station-chart-table-temperature-min,
+        .station-chart-table-temperature-max,
+        .station-chart-table-temperature-both {
+            font-weight: 700;
+        }
+        .station-chart-table-temperature-min {
+            color: #2878b5;
+        }
+        .station-chart-table-temperature-max {
+            color: #d64545;
+        }
+        .station-chart-table-temperature-both {
+            color: #d64545;
+            background: linear-gradient(90deg, #d64545 50%, #2878b5 50%);
+            background-clip: text;
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+        .station-chart-table tr.station-chart-table-synoptic-boundary > * {
+            border-top: 2px solid #9e9e9e;
+        }
+        .station-chart-table tr.station-chart-table-hydrological-boundary > * {
+            border-top: 2px solid #2878b5;
+        }
         .station-chart-legend-dot {
             width: 7px;
             height: 7px;
@@ -378,7 +511,13 @@
         .station-chart-y-label {
             fill: var(--text-muted);
             font-family: Arial, sans-serif;
-            font-size: 12px;
+            font-size: 11px;
+        }
+        .station-chart-date-label {
+            fill: var(--text-muted);
+            font-family: Arial, sans-serif;
+            font-size: 11px;
+            font-weight: 700;
         }
         .station-charts-empty {
             grid-column: 1 / -1;
@@ -390,10 +529,17 @@
         @media (max-width: 600px) {
             #stationChartsDialog {
                 width: calc(100vw - 12px);
-                max-height: 92vh;
+                max-height: calc(100vh - 12px);
             }
             .station-charts-shell {
-                max-height: 92vh;
+                max-height: calc(100vh - 12px);
+            }
+            .station-charts-range {
+                align-items: flex-start;
+                gap: 6px 10px;
+            }
+            .station-chart-range-status {
+                flex-basis: 100%;
             }
             .station-charts-workspace {
                 grid-template-columns: minmax(0, 1fr);
@@ -1087,7 +1233,7 @@
             align-items: center;
             gap: 5px;
             white-space: nowrap;
-            margin-top: 3px;
+            margin-top: 1px;
             font-size: 10px;
         }
         .station-status-control .station-status-dot {
@@ -1703,6 +1849,15 @@
                 </div>
                 <button type="button" id="stationChartsClose" class="station-charts-close" aria-label="Zamknij wykresy" title="Zamknij">×</button>
             </header>
+            <div class="station-charts-range" aria-label="Zakres dat wykresów">
+                <label for="stationChartStartDate">Od
+                    <input id="stationChartStartDate" type="date" aria-label="Data początku zakresu">
+                </label>
+                <label for="stationChartEndDate">Do
+                    <input id="stationChartEndDate" type="date" aria-label="Data końca zakresu">
+                </label>
+                <p id="stationChartRangeStatus" class="station-chart-range-status" role="status" aria-live="polite"></p>
+            </div>
             <div class="station-charts-workspace">
                 <fieldset class="station-chart-parameters">
                     <legend>Zmienne</legend>

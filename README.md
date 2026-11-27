@@ -11,15 +11,22 @@ Jeżeli IMGW nie udostępnia wysokości danej stacji, pozostaje wartość z
 
 Dobowe Tmin i Tmax są dopasowywane po nazwie oraz współrzędnych stacji
 (tolerancja 0,00001°). Sama zgodność nazwy nie wystarcza: przy braku
-jednoznacznego dopasowania wartości nie są przypisywane.
+jednoznacznego dopasowania wartości nie są przypisywane. Data dobowa pozostaje
+taka, jaką podaje serwis Przymrozki.
 
 ### Kompletność danych godzinowych
 
+Okna godzinowe zależą od rodzaju pomiaru. Temperatura (Ta, Tmin_hour,
+Tmax_hour) i wiatr korzystają z doby synoptycznej: od 18:00 UTC dnia
+poprzedniego do 18:00 UTC daty archiwum (19:00–19:00 zimą, 20:00–20:00
+latem). Opady korzystają z doby opadowej: od 06:00 UTC daty archiwum do
+06:00 UTC dnia następnego (07:00–07:00 zimą, 08:00–08:00 latem); poranny
+pomiar graniczny jest przypisywany do poprzedniego dnia.
 Dla najnowszego dnia żółte znaczniki uwzględniają pomiary do ostatniej godziny,
 w której dowolna stacja ma odczyt danego parametru. Późniejsze godziny ani
 odczyty innych parametrów nie są oceniane; wcześniejsze braki nadal powodują
 żółte oznaczenie. W starszych dniach sprawdzana jest cała doba meteorologiczna,
-łącznie z godzinami granicznymi.
+łącznie z godzinami granicznymi. Każdy typ pomiaru sprawdza własne okno.
 
 ### Statusy stacji
 
@@ -32,8 +39,8 @@ ukrywa etykietę. Dla Ta oraz godzinowych ekstremów temperatury żółty status
 oznacza wykrytą lukę w danych; brak pomiarów z jeszcze niezakończonej doby sam
 w sobie nie powoduje żółtego statusu.
 Niezakończona lub jeszcze niepobrana doba nie jest uznawana za całodobowy brak.
-Aktywność jest oceniana dla 30 dni do końca wybranej doby meteorologicznej
-(06:00 UTC). Przy niepełnym archiwum odpowiednie statusy nie są potwierdzone;
+Aktywność jest oceniana dla 30 dni do końca wybranego okna danych. Przy
+niepełnym archiwum odpowiednie statusy nie są potwierdzone;
 ostrzeżenie pojawia się w panelu.
 
 W danej warstwie nie są oznaczane jako brakujące stacje, dla których nie
@@ -58,9 +65,50 @@ nie zmienia katalogu.
 
 ### Wykresy stacji
 
+Wykresy godzinowe mają dwa kalendarze początku i końca zakresu. Wybrany zakres
+obejmuje pełne doby: od 18:00 UTC dnia poprzedzającego datę początkową do
+06:00 UTC dnia następującego po dacie końcowej. Wykresy korzystają z danych
+stacji z każdego pliku w zakresie oraz z plików sąsiednich. Etykiety osi
+pokazują czas lokalny; jasnoszare linie oznaczają wewnętrzne granice dób
+synoptycznych na wykresach temperatury i wiatru oraz dób hydrologicznych na
+wykresie opadów. Daty obu rodzajów dób są umieszczone nad wykresem, na środku
+przedziału między sąsiednimi podziałkami; doba hydrologiczna jest opisana datą
+jej początku, również na częściowo widocznych krawędziach wykresu. U góry
+wykresu opadów widnieje `Precip_24h` dla doby od 06:00 UTC danego dnia do
+06:00 UTC następnego dnia (pomiary w przedziale od 07:00 do 06:00 UTC włącznie).
+Suma jest obliczana z 24 różnych pomiarów godzinowych IMGW, a nie pobierana jako
+gotowa suma dobowa. Mapa, zestawienia i wykresy przeliczają ją z dostępnych
+danych godzinowych lub wykorzystują sumę archiwalną z potwierdzonymi 24
+pomiarami; w przeciwnym razie pokazują brak danych. Samo wyświetlanie nie
+nadpisuje plików archiwum; ostatnie sześć tygodni aktualizuje skrypt backfill.
+Dłuższe wykresy można przewijać
+poziomo, aby zachować czytelność godzin.
+Na wykresie temperatury najwyższy i najniższy punkt Ta w każdej dobie
+synoptycznej są oznaczone odpowiednio na czerwono (`Tmax_hour`) i niebiesko
+(`Tmin_hour`): punkty są wypełnione, a wartości pogrubione i oznaczone tym
+samym kolorem. Jeśli maksimum i minimum przypadają na ten sam punkt, widoczne
+są oba kolory. U góry każdej doby wyświetlane są minimum, maksimum i średnia
+arytmetyczna z dostępnych godzinowych pomiarów Ta; przy braku pomiarów podawany
+jest brak danych. Na wykresie wiatru maksima każdej serii w każdej dobie
+synoptycznej mają wypełnione punkty i pogrubione wartości; przy remisie
+wyróżnione są wszystkie maksima. Dobowe maksima porywów `Wind_max` oraz ich
+podsumowanie nad wykresem są czerwone. Pozostałe punkty są puste w środku,
+a linie pomiarowe mają przerwę w ich obrębie. Podsumowanie wiatru dla każdej
+doby zawiera najwyższy godzinowy poryw oraz średnią arytmetyczną dostępnych
+godzinowych średnich prędkości, także dla niewybranej serii.
+Wartości pomiarów są widoczne nad punktami i słupkami; po najechaniu na punkt
+lub słupek wyświetlane są dodatkowo szczegóły pomiaru. Tabela poniżej jest
+jedną zbiorczą tabelą zaznaczonych parametrów ze wszystkimi
+godzinami, wartościami i datami zawierającymi rok. Data i godzina są w
+oddzielnych kolumnach, a kolorowe linie i legenda oznaczają granice dób.
+W tabeli pogrubione są dobowe maksima wiatru i godzinowych opadów, a także
+minimum i maksimum temperatury, odpowiednio na niebiesko i czerwono.
+
 Zakres osi każdego wykresu zależy od wybranych danych i obejmuje co najmniej
-trzy jednostki zapasu po obu stronach. Siatka ma linie co jednostkę, z mocniej
-zaznaczonymi liniami co pięć jednostek.
+trzy jednostki zapasu po obu stronach. Górny zapas zwiększa się w razie potrzeby,
+aby etykiety pomiarów nie nachodziły na podsumowania dobowe. Siatka ma linie co jednostkę, z mocniej
+zaznaczonymi liniami co pięć jednostek. Skala opadów i wiatru zaczyna się od
+zera, a opad godzinowy jest przedstawiany słupkami.
 
 ### Zmiana czasu
 
